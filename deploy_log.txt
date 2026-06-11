@@ -1,0 +1,7 @@
+================================================== 
+ AuhHeung deploy log  2026-06-11 19:12:24.00 
+ folder: C:\Users\HERO\Desktop\AI\2_project_AuhHeung\web_deploy\ 
+================================================== 
+[git] git version 2.54.0.windows.1 
+ 
+----- [1/3] git add . ----- 
