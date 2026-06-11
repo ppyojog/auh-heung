@@ -15,8 +15,8 @@
 //    - 메인 퀘스트는 '들어갔다 나오기' 없이 사건→선택→결과→다음 사건이 끊김없이 흐름
 //    - 한 지역 끝나면 자동으로 다음 목적지로 (지역 메뉴 라우팅 제거)
 //    - 사냥/상점/캐릭터/월드맵은 화면 이동이 아니라 '아래에서 올라오는 모달'
-//  ▣ 계승: D20(#003)·유지비(#007)·파산/마진콜(#004/#008)·레벨업(#011)·
-//    업적/칭호(#014/#015)·돌발뉴스(#010)·보스(#025)·S형(#024)·신용(#005)·
+//  ▣ 계승: D20(#003)·유지비(#007)·몰락/의회의 빚받이 습격(#004/#008)·레벨업(#011)·
+//    업적/칭호(#014/#015)·돌발뉴스(#010)·보스(#025)·S형(#024)·경계(#005)·
 //    도파민 고속도로(#089~#092)·연출(#041~#050: 타이니/카운트업/크리티컬)
 //  ※ 그래픽은 지역 배경 + 캐릭터 초상화 자리만 추후 삽입.
 // =============================================================================
@@ -126,7 +126,7 @@ extension ChoiceTypeX on ChoiceType {
       : this == ChoiceType.conservative
           ? '안정 협상'
           : this == ChoiceType.shortSale
-              ? '역베팅'
+              ? '매복'
               : '초월';
   TribeStat get stat => this == ChoiceType.aggressive
       ? TribeStat.wildness
@@ -279,7 +279,7 @@ class Relic {
 }
 
 const Map<String, Relic> kRelics = {
-  'claw': Relic('claw', '황금 발톱', '🦅', RelicFx.cGold, 0.15, 'C형(역베팅) 성공 보상 +15%'),
+  'claw': Relic('claw', '황금 발톱', '🦅', RelicFx.cGold, 0.15, 'C형(매복) 성공 보상 +15%'),
   'idol': Relic('idol', '황금 우상', '🗿', RelicFx.huntGold, 0.25, '사냥 보상 +25%'),
   'hide': Relic('hide', '불멸의 가죽', '🛡', RelicFx.upkeep, 0.15, '매 턴 유지비 -15%'),
   'instinct': Relic('instinct', '포식자의 직감', '👁', RelicFx.dice, 1, '모든 판정 +1'),
@@ -311,11 +311,11 @@ const List<ShopItem> kBlackMarket = [
   ShopItem('SHP_002', '의회 스파이의 인장', 12000, 2, '영향력 +2 · 돌발뉴스 확률 5% 감소',
       equipment: Equipment('SHP_002', '의회 스파이의 인장', Grade.rare, EquipSlot.accessory,
           statBonus: {TribeStat.influence: 2}, note: '돌발뉴스 확률 -5%p')),
-  ShopItem('SHP_003', '헤지펀드 호랑이의 발톱', 35000, 1, '야성 +4 · 영향력 +2 · 공매도 보상 10%',
-      equipment: Equipment('SHP_003', '헤지펀드 호랑이의 발톱', Grade.ancient, EquipSlot.weapon,
+  ShopItem('SHP_003', '그림자 사냥꾼 호랑이의 발톱', 35000, 1, '야성 +4 · 영향력 +2 · 매복 보상 10%',
+      equipment: Equipment('SHP_003', '그림자 사냥꾼 호랑이의 발톱', Grade.ancient, EquipSlot.weapon,
           statBonus: {TribeStat.wildness: 4, TribeStat.influence: 2},
-          note: 'C형(공매도) 보상 +10%')),
-  ShopItem('SHP_004', '파산자의 기적 (포션)', 3000, 4, '즉시 신용 등급 1단계 상승(최대 2등급)',
+          note: 'C형(매복) 보상 +10%')),
+  ShopItem('SHP_004', '몰락자의 기적 (포션)', 3000, 4, '즉시 경계 등급 1단계 상승(최대 2등급)',
       isCreditPotion: true),
 ];
 
@@ -366,7 +366,7 @@ const Map<String, Region> kRegions = {
       ]),
   'plain': Region('plain', '무너지는 도미노 평원', '🏚️',
       [Color(0xFF2C2622), Color(0xFF14110F)], 2,
-      '연쇄 파산이 휩쓰는 잿빛 평원. 무너진 부족의 영토가 널려 있습니다.',
+      '연쇄 몰락이 휩쓰는 잿빛 평원. 무너진 부족의 영토가 널려 있습니다.',
       questEventIds: ['SCR_004', 'SCR_005', 'SCR_006'],
       hunts: [
         HuntTarget('하이에나 무리', TribeStat.leather, 16, 26000, 240, -7000,
@@ -379,7 +379,7 @@ const Map<String, Region> kRegions = {
       hasShop: true),
   'tower': Region('tower', '마법공학 첨탑 도시', '🗼',
       [Color(0xFF1B2238), Color(0xFF0C0F1A)], 3,
-      '신기술 버블이 하늘을 찌르는 첨탑의 도시. 광기와 혁신이 뒤섞입니다.',
+      '신기술 신기루이 하늘을 찌르는 첨탑의 도시. 광기와 혁신이 뒤섞입니다.',
       questEventIds: ['SCR_007', 'SCR_008', 'SCR_009'],
       hunts: [
         HuntTarget('폭주한 유령 부족', TribeStat.wildness, 19, 40000, 360, -10000,
@@ -392,7 +392,7 @@ const Map<String, Region> kRegions = {
       hasBoss: true),
   'arena': Region('arena', '피의 투기장', '⚔️',
       [Color(0xFF2A1010), Color(0xFF120606)], 0,
-      '맹수들이 전리품을 걸고 끝없이 충돌하는 투기장. 반복 도전으로 자산을 불립니다.',
+      '맹수들이 전리품을 걸고 끝없이 충돌하는 투기장. 반복 도전으로 전리품을 불립니다.',
       hunts: [
         HuntTarget('굶주린 검투 맹수', TribeStat.wildness, 15, 22000, 200, -5000),
         HuntTarget('투기장 챔피언', TribeStat.leather, 20, 50000, 450, -15000,
@@ -418,10 +418,10 @@ class TitleDef {
 }
 
 const Map<String, TitleDef> kTitles = {
-  'ACH_001': TitleDef('ACH_001', '공매도의 군주', '광기의 불나방', 'C형 성공 보상 +5% · (장착) C형 DC -2'),
+  'ACH_001': TitleDef('ACH_001', '매복의 군주', '광기의 불나방', 'C형 성공 보상 +5% · (장착) C형 DC -2'),
   'ACH_002': TitleDef('ACH_002', '불패의 가죽', '대륙의 철벽 맷집', '매 턴 고정 유지비 -10%'),
-  'ACH_003': TitleDef('ACH_003', '월스트리트의 호랑이', '보이지 않는 손의 총아', '신용 점수 상시 +100 · (장착) B형 DC -3'),
-  'ACH_004': TitleDef('ACH_004', '기생초', '대륙의 파산자', '4등급 대출 이자 누적 할증 -5%'),
+  'ACH_003': TitleDef('ACH_003', '흑요석 가도의 호랑이', '보이지 않는 손의 총아', '경계 점수 상시 +100 · (장착) B형 DC -3'),
+  'ACH_004': TitleDef('ACH_004', '기생초', '대륙의 몰락자', '4등급 빚 조공 누적 할증 -5%'),
   'ACH_BOSS': TitleDef('ACH_BOSS', '대륙의 절대 포식자', '진 보스 격파', '의장 네오 맹수 격파의 증표'),
 };
 
@@ -437,14 +437,14 @@ class NewsDef {
 }
 
 const List<NewsDef> kNews = [
-  NewsDef('NS_003', '원시 꿀송이 거품 붕괴', 2, '암시장 장비 매입가 30% 폭락',
-      TribeStat.wildness, 13, '자본 이득 +10,000 스톤'),
-  NewsDef('NS_001', '그림자 의회의 기습 금리 인상', 3, '다음 3턴 대출 이자율 2배 할증',
+  NewsDef('NS_003', '원시 꿀송이 신기루 붕괴', 2, '암시장 장비 값이 30% 주저앉음',
+      TribeStat.wildness, 13, '권세 이득 +10,000 스톤'),
+  NewsDef('NS_001', '그림자 의회의 기습 피의 조공 인상', 3, '다음 3턴 빚 조공율 2배 할증',
       TribeStat.leather, 15, '유지비 30% 감면(즉시 1턴)'),
   NewsDef('NS_004', '의회 내부자의 기밀 유출', 5, '다음 1턴 A·C형 요구 DC -3 경감',
       null, 0, '글로벌 보너스 버프 작동'),
-  NewsDef('NS_002', '검은 목요일의 대공황', 6, '즉시 마나 스톤 잔액 15% 강제 삭감',
-      TribeStat.influence, 17, '자산 삭감 0% 면제'),
+  NewsDef('NS_002', '검은 목요일의 대붕괴', 6, '즉시 마나 스톤 잔액 15% 강제 삭감',
+      TribeStat.influence, 17, '전리품 삭감 0% 면제'),
 ];
 
 // =============================================================================
@@ -465,7 +465,7 @@ class Teach {
   // 게임을 처음 켰을 때 — 세계관·목적·타이니·핵심 조작을 짧은 호흡으로 한 장씩.
   static const List<String> prologue = [
     '…쿨럭. 차가운 핏물 웅덩이 속에서 대장님이 무거운 눈꺼풀을 들어 올립니다. 흐릿한 시야 끝, 누군가 대장님을 내려다보며 이를 드러내고 히죽 웃습니다.',
-    '크하핫… 살아 계시는군요, 대장님. 저는 타이니. 대장님의 그림자이자 마지막 송곳니입니다. 이 잿더미와 시체 더미 속에서 숨이 붙은 건… 대장님과 저, 둘뿐입니다.',
+    '크하핫… 살아 계시는군요, 대장님. 저는 타이니. 대장님의 그림자조공 마지막 송곳니입니다. 이 잿더미와 시체 더미 속에서 숨이 붙은 건… 대장님과 저, 둘뿐입니다.',
     '기억나십니까. 어젯밤, \'보이지 않는 손\'의 사냥개 — 그림자 의회의 집행관 \'네오 맹수\'가 우리 둥지를 덮쳤습니다. 불길이 치솟았고, 평생 쌓은 전리품은 전부 놈들의 금고로 끌려갔습니다.',
     '대장님은 마지막 한 마리가 쓰러질 때까지 발톱을 휘두르다 무릎 꿇으셨죠. 부족은… 모두 잃었습니다. 그런데도 대장님의 심장은 아직 뜁니다. 그게 무슨 뜻인지 아십니까?',
     '복수입니다, 대장님. 빼앗긴 전리품 한 톨까지 되찾고, 그 핏빛 산더미 위에 의회 의장의 머리를 얹는 것. 대장님이 살아남은 단 하나의 이유죠.',
@@ -477,17 +477,17 @@ class Teach {
     '자, 첫 사냥감이 코앞입니다. 망설이지 마십시오 — ⭐ 표시가 제 추천입니다. 오늘부터 이 대륙은 대장님의 사냥터입니다. 가시죠, 대장님!!',
   ];
   static const String credit =
-      '대장님, 화면 위에 \'신용\' 등급이 새로 떴습니다. 의회가 매기는 대장님의 위험도예요 — 숫자가 작을수록(1등급에 가까울수록) 좋습니다. 금고가 마르면 등급이 떨어지니, 매 턴 빠져나가는 유지비를 늘 살피십시오!';
+      '대장님, 화면 위에 \'경계\' 등급이 새로 떴습니다. 의회가 매기는 대장님의 위험도예요 — 숫자가 작을수록(1등급에 가까울수록) 좋습니다. 금고가 마르면 등급이 떨어지니, 매 턴 빠져나가는 유지비를 늘 살피십시오!';
   static const String hunt =
       '전리품이 더 고프시죠? ⚔ \'사냥\'이 열렸습니다, 대장님. 사건 사이사이 들짐승을 약탈해 금고를 불릴 수 있습니다. 피 냄새가 향긋하군요!';
   static const String chapter2c =
-      '제2장입니다, 대장님. 모두가 무너지는 평원에선 홀로 비웃는 자가 거부가 됩니다. 새 길 🛡C형 \'역베팅\'이 열렸습니다 — 가장 위험하지만 가장 짜릿한 한 방이죠!';
+      '제2장입니다, 대장님. 모두가 무너지는 평원에선 홀로 비웃는 자가 거부가 됩니다. 새 길 🛡C형 \'매복\'이 열렸습니다 — 가장 위험하지만 가장 짜릿한 한 방이죠!';
   static const String worldmap =
       '🗺 \'월드맵\'도 열렸습니다. 이미 짓밟은 사냥터로 되돌아가 전리품을 더 챙기거나, 다음 무대를 노릴 수 있습니다.';
   static const String shop =
       '🏪 \'암시장\'이 열렸습니다, 대장님. 약탈한 전리품으로 비밀 병기를 사들여 송곳니를 더 날카롭게 가십시오!';
   static const String stats =
-      '대장님의 격이 올랐습니다! 이제 🎒 \'캐릭터\'에서 세 가지 야성 — 🔥야성·👑영향력·🛡가죽 — 을 키울 수 있습니다. 야성은 A형 약탈, 영향력은 B형 협상, 가죽은 C형 역베팅에 힘을 보탭니다. 즐겨 쓰는 길을 키우면 주사위가 더 잘 풀립니다!';
+      '대장님의 격이 올랐습니다! 이제 🎒 \'캐릭터\'에서 세 가지 야성 — 🔥야성·👑영향력·🛡가죽 — 을 키울 수 있습니다. 야성은 A형 약탈, 영향력은 B형 협상, 가죽은 C형 매복에 힘을 보탭니다. 즐겨 쓰는 길을 키우면 주사위가 더 잘 풀립니다!';
   static const String hyper =
       '제3장, 첨탑의 도시입니다. 이곳의 광기는 대장님께 유리합니다 — 초반의 기세 🚀 \'도파민 고속도로\'가 주사위에 날개를 답니다. 식기 전에 몰아치십시오!';
   static const String boss =
@@ -503,11 +503,11 @@ class Tiny {
   const Tiny._();
   static const Map<ChoiceType, String> success = {
     ChoiceType.aggressive:
-        '대장님! 시장의 모든 나약한 초식동물들이 대장님의 거침없는 야성에 짓눌려 '
-            '비명을 지르고 있습니다! 이 막대한 자산은 전부 대장님의 몫입니다!',
+        '대장님! 사냥터의 모든 나약한 초식동물들이 대장님의 거침없는 야성에 짓눌려 '
+            '비명을 지르고 있습니다! 이 막대한 전리품은 전부 대장님의 몫입니다!',
     ChoiceType.conservative:
         '소름 돋을 정도로 완벽한 안목이십니다, 대장님. 의회의 능구렁이 같은 고위 '
-            '관료들조차 대장님의 완벽한 자산 설계 앞에 무릎을 꿇었습니다!',
+            '관료들조차 대장님의 완벽한 전리품 설계 앞에 무릎을 꿇었습니다!',
     ChoiceType.shortSale:
         '대륙의 역사가 바뀝니다!! 모두가 파멸할 때 홀로 세상을 비웃으며 거부로 '
             '군림하는 자, 그게 바로 대장님이십니다! 소름이 멈추지 않습니다!',
@@ -522,7 +522,7 @@ class Tiny {
       '대장님, 고개를 숙이지 마십시오! 의회가 파놓은 비열한 함정에 잠시 발을 '
       '헛디뎠을 뿐입니다. 대장님의 매서운 발톱은 아직 부러지지 않았습니다!';
   static const String crisis =
-      '이대로 대륙의 영웅이 자본의 노예들에게 무릎 꿇는 서사를 용납할 수 없습니다...! '
+      '이대로 대륙의 영웅이 권세에 굴종한 짐승들에게 무릎 꿇는 서사를 용납할 수 없습니다...! '
       '대장님, 의회의 자금줄을 역으로 묶어버릴 마지막 카드가 준비되어 있습니다!';
   static const Map<String, String> domain = {
     '원시 부족': '대장님, 지금은 비록 초라하지만 대장님의 야성이라면 이 대륙을 집어삼킬 날이 머지않았습니다!',
@@ -549,10 +549,10 @@ class Tiny {
   ];
   // 1회차 가이드 톤 (콕 집어줌)
   static const List<String> guide = [
-    '고민 마십시오 대장님! ⭐ 표시된 길이 정답입니다. 제 직감을 믿으세요!',
-    '이번엔 ⭐ 쪽으로 시원하게 들이받으시죠! 제가 길을 압니다!',
-    '복잡하게 생각 마세요. ⭐ 누르고 승리의 쾌감만 즐기십시오!',
-    '대장님은 즐기기만 하십시오. ⭐ 따라가면 만사형통입니다!',
+    '발톱이 먼저 근질거리는 쪽… 별빛이 내려앉은 그 길에서 저는 피 냄새를 맡습니다, 대장님.',
+    '망설임은 사냥감만 살찌울 뿐이죠. 별이 비친 자리로 몸을 던지면, 나머진 제가 봅니다.',
+    '제 코끝이 한 곳을 가리킵니다. 별이 앉은 그 길 — 거기서 살점이 떨어지는 소리가 들립니다.',
+    '머리는 잠시 접어 두십시오, 대장님. 별이 깃든 길은… 대장님의 본능이 이미 알고 있습니다.',
   ];
   // 실패 격려
   static const List<String> failPool = [
@@ -655,8 +655,8 @@ class BossPhaseDef {
 }
 
 const List<BossPhaseDef> kBossPhases = [
-  BossPhaseDef('1단계 · 통화 압착 (금리 인상 폭탄)', TribeStat.leather, 18, '마나 스톤 -20,000'),
-  BossPhaseDef('2단계 · 평판 말소 (가짜 뉴스 선동)', TribeStat.influence, 20, '신용 등급 2단계 강제 하락'),
+  BossPhaseDef('1단계 · 마나 압착 (피의 조공 인상 폭탄)', TribeStat.leather, 18, '마나 스톤 -20,000'),
+  BossPhaseDef('2단계 · 평판 말소 (가짜 뉴스 선동)', TribeStat.influence, 20, '경계 등급 2단계 강제 하락'),
   BossPhaseDef('3단계 · 무력 처분 (용병단 총공격)', TribeStat.wildness, 22, '최고 등급 장비 파괴'),
 ];
 
@@ -685,64 +685,64 @@ class GameScript {
           goldFail: -500, statFail: {TribeStat.influence: -1}),
         GameOption(type: ChoiceType.shortSale,
           successText: '대륙의 역사가 대장님의 혜안 앞에 무릎을 꿇습니다.',
-          failText: '작전 실패, 시장이 이성을 상실해 가격이 거꾸로 치솟습니다.',
+          failText: '작전 실패, 판이 뒤집혀 값이 거꾸로 치솟습니다.',
           goldSuccess: 12000, expSuccess: 300, itemReward: '고대 대검',
           goldFail: -8000, statFail: {TribeStat.leather: -4}),
       ]),
-    GameEvent(id: 'SCR_002', chapter: 1, title: '02. 그림자 위원회의 보증서',
-      mainText: '광기가 절정에 달하자, 기묘한 양가죽 증서를 그림자 위원회가 흩뿌립니다.',
+    GameEvent(id: 'SCR_002', chapter: 1, title: '02. 그림자 위원회의 보증표',
+      mainText: '광기가 절정에 달하자, 기묘한 양가죽 증표를 그림자 위원회가 흩뿌립니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
-          successText: '완벽한 타이밍에 폭탄을 넘겼습니다! 최고점에서 털어냈습니다.',
-          failText: '최고점에 물렸습니다! 발행량을 10배로 늘린다는 소문이 돕니다.',
+          successText: '완벽한 타이밍에 폭탄을 넘겼습니다! 꼭대기에서 털어냈습니다.',
+          failText: '꼭대기에서 발이 묶였습니다! 찍어내는 양을 10배로 늘린다는 소문이 돕니다.',
           goldSuccess: 7500, expSuccess: 180,
           goldFail: -3000, statFail: {TribeStat.wildness: -2}),
         GameOption(type: ChoiceType.conservative,
           successText: '기밀 정보를 선점했습니다! 마법 문자를 해독해 길목을 잡았습니다.',
-          failText: '의회의 역공을 받았습니다. 시장 교란죄 혐의를 뒤집어씁니다.',
+          failText: '의회의 역공을 받았습니다. 판 교란죄 혐의를 뒤집어씁니다.',
           goldSuccess: 3500, expSuccess: 140, itemReward: '희귀 실크햇',
           goldFail: -1000, statFail: {TribeStat.influence: -2}),
         GameOption(type: ChoiceType.shortSale,
           successText: '대륙의 질서를 뒤흔드는 대승리입니다!',
-          failText: '보이지 않는 손에 짓밟혔습니다! 가격을 억지로 부양당합니다.',
+          failText: '보이지 않는 손에 짓밟혔습니다! 값을 억지로 떠받쳐 버립니다.',
           goldSuccess: 15000, expSuccess: 350, itemReward: '고대 대검',
           goldFail: -9900, creditFail: -2),
       ]),
     GameEvent(id: 'SCR_003', chapter: 1, title: '03. 꽃망울이 터지는 날',
-      mainText: '꿀송이가 창고에서 무더기로 썩어간다는 밀서가 도착했습니다. 거품이 터지기 직전입니다.',
+      mainText: '꿀송이가 창고에서 무더기로 썩어간다는 밀서가 도착했습니다. 신기루이 터지기 직전입니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
-          successText: '기적이 일어났습니다! 의회의 기습 부양책으로 반등합니다.',
+          successText: '기적이 일어났습니다! 의회의 기습 지원으로 단숨에 되살아납니다.',
           failText: '완벽한 파멸입니다. 떨어지는 칼날을 맨손으로 잡았습니다.',
           goldSuccess: 9000, expSuccess: 200,
           goldFail: -5000, statFail: {TribeStat.wildness: -3}),
         GameOption(type: ChoiceType.conservative,
           successText: '탈출에 성공했습니다! 무너지기 전 헐값에 모두 넘겼습니다.',
-          failText: '처분 타이밍을 놓쳤습니다. 매수자가 전멸했습니다.',
+          failText: '처분 타이밍을 놓쳤습니다. 약탈자가 전멸했습니다.',
           goldSuccess: 4000, expSuccess: 150,
           goldFail: -2000, statFail: {TribeStat.influence: -2}),
         GameOption(type: ChoiceType.shortSale,
-          successText: '전설적인 대청산의 날입니다! 공매도 계약이 만개합니다.',
-          failText: '리스크 맷집이 버티지 못했습니다! 규제로 계약이 무효화됩니다.',
+          successText: '전설적인 대정리의 날입니다! 매복 계약이 만개합니다.',
+          failText: '위험 맷집이 버티지 못했습니다! 금령로 계약이 무효화됩니다.',
           goldSuccess: 25000, expSuccess: 500, itemReward: '신화 무기 해금',
           goldFail: -15000, statFail: {TribeStat.leather: -5}),
       ]),
-    GameEvent(id: 'SCR_004', chapter: 2, title: '04. 도미노 파산의 서막',
-      mainText: '리먼 행성단이 파산을 선언했습니다. 뱅크런 사태가 대륙을 덮칩니다.',
+    GameEvent(id: 'SCR_004', chapter: 2, title: '04. 도미노 몰락의 서막',
+      mainText: '무너진 거상 부족이 몰락을 선언했습니다. 무리 이탈 사태가 대륙을 덮칩니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
           successText: '포식자의 약탈이 통했습니다! 부도 영토를 헐값에 집어삼킵니다.',
-          failText: '타이밍이 일렀습니다. 숨겨진 부채가 연쇄로 터집니다.',
+          failText: '타이밍이 일렀습니다. 숨겨진 빚더미가 연쇄로 터집니다.',
           goldSuccess: 6000, expSuccess: 220, itemReward: '희귀 문서',
           goldFail: -4000, statFail: {TribeStat.wildness: -2}),
         GameOption(type: ChoiceType.conservative,
-          successText: '신뢰의 승리입니다! 자산 구조를 공개해 동요를 잠재웁니다.',
-          failText: '부족원들의 패닉을 막지 못했습니다. 뱅크런이 번집니다.',
+          successText: '신뢰의 승리입니다! 전리품 구조를 공개해 동요를 잠재웁니다.',
+          failText: '부족원들의 패닉을 막지 못했습니다. 무리 이탈이 번집니다.',
           goldSuccess: 3000, expSuccess: 180, itemReward: '일반 방패',
           goldFail: -2500, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
-          successText: '차가운 송곳니가 흑막을 뚫었습니다! 공매도가 만료 정산됩니다.',
-          failText: '의회의 기습 구제금융 선언으로 강제 청산당합니다.',
+          successText: '차가운 송곳니가 흑막을 뚫었습니다! 매복이 만료 마무리됩니다.',
+          failText: '의회의 기습 의회의 거짓 사면 선언으로 강제 정리당합니다.',
           goldSuccess: 18000, expSuccess: 400, itemReward: '고대 무기',
           goldFail: -12000, statFail: {TribeStat.leather: -4}),
       ]),
@@ -751,17 +751,17 @@ class GameScript {
       options: [
         GameOption(type: ChoiceType.aggressive,
           successText: '트렌드를 관통했습니다! 지원금을 끌어와 희귀 원석을 선점합니다.',
-          failText: '타이밍을 놓쳤습니다! 경쟁하느라 수수료만 날립니다.',
+          failText: '타이밍을 놓쳤습니다! 경쟁하느라 헛돈만 날립니다.',
           goldSuccess: 8000, expSuccess: 250,
           goldFail: -3000, statFail: {TribeStat.wildness: -2}),
         GameOption(type: ChoiceType.conservative,
-          successText: '완벽한 방어전입니다! 자산을 실물 고대 금괴로 전환합니다.',
+          successText: '완벽한 방어전입니다! 전리품을 실물 고대 금괴로 전환합니다.',
           failText: '가짜 금괴에 속았습니다! 사기꾼에게 고철을 떠안습니다.',
           goldSuccess: 4500, expSuccess: 200, itemReward: '일반 방패',
           goldFail: -2000, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
-          successText: '의회의 오판을 징벌했습니다! 폭락을 정확히 저격합니다.',
-          failText: '규제에 막혔습니다! 매매 정지로 자산이 동결됩니다.',
+          successText: '의회의 오판을 징벌했습니다! 와해을 정확히 저격합니다.',
+          failText: '금령에 막혔습니다! 약탈 정지로 전리품이 동결됩니다.',
           goldSuccess: 20000, expSuccess: 450, itemReward: '고대 무기',
           goldFail: -14000, statFail: {TribeStat.leather: -5}),
       ]),
@@ -775,31 +775,31 @@ class GameScript {
           goldFail: -6000, statFail: {TribeStat.wildness: -3}),
         GameOption(type: ChoiceType.conservative,
           successText: '현명한 슬림화! 전투수를 방출해 고정비를 줄입니다.',
-          failText: '청산 타이밍을 놓쳤습니다! 유지비가 금고를 파먹습니다.',
+          failText: '정리 타이밍을 놓쳤습니다! 유지비가 금고를 파먹습니다.',
           goldSuccess: 5500, expSuccess: 220, itemReward: '희귀 문서',
           goldFail: -3500, statFail: {TribeStat.influence: -2}),
         GameOption(type: ChoiceType.shortSale,
-          successText: '탐욕스러운 포식 완수! 부도 자산을 압도적 맷집으로 흡수합니다.',
+          successText: '탐욕스러운 포식 완수! 부도 전리품을 압도적 맷집으로 흡수합니다.',
           failText: '맷집 한계 초과! 독소 조항이 터집니다.',
           goldSuccess: 22000, expSuccess: 500, itemReward: '고대 무기',
           goldFail: -16000, statFail: {TribeStat.leather: -5}, creditFail: -1),
       ]),
     GameEvent(id: 'SCR_007', chapter: 3, title: '07. 마법 공학 엔진의 탄생',
-      mainText: '마법 공학 엔진이 발명되었습니다. 이름만 같으면 폭등하는 묻지마 광풍이 붑니다.',
+      mainText: '마법 공학 엔진이 발명되었습니다. 이름만 같으면 치솟는 묻지마 광풍이 붑니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
-          successText: '광기의 파도를 탔습니다! 최고점에서 유령 지분을 떠넘깁니다.',
+          successText: '광기의 파도를 탔습니다! 꼭대기에서 유령 몫을 떠넘깁니다.',
           failText: '막차를 탔습니다! 유령 부족들이 연쇄로 야반도주합니다.',
           goldSuccess: 12000, expSuccess: 320, itemReward: '일반 부츠',
           goldFail: -5000, statFail: {TribeStat.wildness: -3}),
         GameOption(type: ChoiceType.conservative,
-          successText: '안목의 승리! 정식 특허를 가진 우량 부족을 선별 투자합니다.',
+          successText: '안목의 승리! 또렷한 인장을 지닌 강한 부족만 가려 키웁니다.',
           failText: '가짜 검증에 속아 사기꾼 부족에게 예산을 기부합니다.',
           goldSuccess: 6000, expSuccess: 250, itemReward: '희귀 돋보기',
           goldFail: -3000, statFail: {TribeStat.influence: -2}),
         GameOption(type: ChoiceType.shortSale,
-          successText: '시대를 앞서간 매도자! 사기극을 확신하고 대규모 공매도를 칩니다.',
-          failText: '광기에 압사! 의회 선동으로 폭등해 마진콜로 청산됩니다.',
+          successText: '시대를 앞서간 약탈꾼! 사기극을 확신하고 대규모 매복을 칩니다.',
+          failText: '광기에 압사! 의회 선동으로 값이 치솟다 의회의 빚받이 습격에 휩쓸립니다.',
           goldSuccess: 24000, expSuccess: 550, itemReward: '고대 무기',
           goldFail: -18000, statFail: {TribeStat.leather: -5}, creditFail: -1),
       ]),
@@ -807,13 +807,13 @@ class GameScript {
       mainText: '대륙 통신망 플랫폼을 구축하는 독점 주도권 전쟁이 벌어집니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
-          successText: '거대 플랫폼 주인 등극! 경쟁 부족을 치킨게임으로 파산시킵니다.',
-          failText: '과도한 빚에 짓눌려 매달 돌아오는 이자에 비틀거립니다.',
+          successText: '거대 플랫폼 주인 등극! 경쟁 부족을 치킨게임으로 몰락시킵니다.',
+          failText: '과도한 빚에 짓눌려 매달 돌아오는 조공에 비틀거립니다.',
           goldSuccess: 15000, expSuccess: 350, itemReward: '일반 부츠',
           goldFail: -6500, statFail: {TribeStat.wildness: -3}, creditFail: -1),
         GameOption(type: ChoiceType.conservative,
           successText: '완벽한 설계! 보안 표준을 제정하고 통행세를 징수합니다.',
-          failText: '규제의 덫! 독점 금지 소송에 휘말려 비용을 쏟습니다.',
+          failText: '금령의 덫! 독점 금지 소송에 휘말려 비용을 쏟습니다.',
           goldSuccess: 8000, expSuccess: 280, itemReward: '희귀 돋보기',
           goldFail: -4000, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
@@ -822,64 +822,64 @@ class GameScript {
           goldSuccess: 28000, expSuccess: 600, itemReward: '고대 무기',
           goldFail: -20000, statFail: {TribeStat.leather: -5}),
       ]),
-    GameEvent(id: 'SCR_009', chapter: 3, title: '09. 프로토콜 거품의 종말',
-      mainText: '신기술 부족들의 금고가 바닥났습니다. 연쇄 하한가로 버블이 붕괴합니다.',
+    GameEvent(id: 'SCR_009', chapter: 3, title: '09. 프로토콜 신기루의 종말',
+      mainText: '신기술 부족들의 금고가 바닥났습니다. 연쇄 바닥 추락로 신기루가 붕괴합니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
-          successText: '진정한 가치 투자! 투매가 쏟아질 때 뚝심으로 주워 담습니다.',
+          successText: '진정한 안목! 모두가 겁에 질려 내던질 때 뚝심으로 주워 담습니다.',
           failText: '떨어지는 칼날에 피범벅! 지하실을 뚫고 추락합니다.',
           goldSuccess: 18000, expSuccess: 400, itemReward: '일반 부츠',
           goldFail: -8000, statFail: {TribeStat.wildness: -4}),
         GameOption(type: ChoiceType.conservative,
-          successText: '위기 관리 정석! 지분을 신속 투매해 순수 스톤을 확보합니다.',
-          failText: '미련을 못 버려 시스템 마비로 전 자산이 묶입니다.',
+          successText: '위기 관리 정석! 몫을 신속 내던지기해 순수 스톤을 확보합니다.',
+          failText: '미련을 못 버려 시스템 마비로 전 전리품이 묶입니다.',
           goldSuccess: 10000, expSuccess: 300, itemReward: '희귀 돋보기',
           goldFail: -5000, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
-          successText: '역사적 대포식! 폭락 최저점에서 공매도를 완벽 청산합니다.',
-          failText: '시스템 농간! 의회가 공매도를 전면 금지해 담보를 몰수합니다.',
+          successText: '역사적 대포식! 와해의 밑바닥에서 매복을 완벽히 끝냅니다.',
+          failText: '시스템 농간! 의회가 매복을 전면 금지해 먹잇감를 몰수합니다.',
           goldSuccess: 35000, expSuccess: 700, itemReward: '고대 무기',
           goldFail: -22000, statFail: {TribeStat.leather: -5}, creditFail: -1),
       ]),
     GameEvent(id: 'SCR_010', chapter: 4, title: '10. 그림자 의회의 전면전',
-      mainText: '흑막 그림자 의회가 전면 자산 동결과 시장 조작을 개시했습니다. 대륙의 명운을 건 전면전입니다.',
+      mainText: '흑막 그림자 의회가 전면 전리품 동결과 판 조작을 개시했습니다. 대륙의 명운을 건 전면전입니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
           successText: '맹수의 역습 성공! 의회 비밀 금고를 직접 타격해 동결을 해제합니다.',
-          failText: '자본의 요새 정예 용병단의 반격에 전투수들이 궤멸합니다.',
+          failText: '권세의 요새 정예 용병단의 반격에 전투수들이 궤멸합니다.',
           goldSuccess: 25000, expSuccess: 500, itemReward: '신화 왕관 해금',
           goldFail: -12000, statFail: {TribeStat.wildness: -4}),
         GameOption(type: ChoiceType.conservative,
           successText: '정의의 심판! 주변 부족들을 규합해 최고 법정에 고발합니다.',
-          failText: '배신자 발생! 의회 매수에 넘어간 자에게 밀고당해 기각됩니다.',
+          failText: '배신자 발생! 의회 회유에 넘어간 자에게 밀고당해 기각됩니다.',
           goldSuccess: 15000, expSuccess: 420, itemReward: '신화 반지 해금',
           goldFail: -7500, statFail: {TribeStat.influence: -4}, creditFail: -1),
         GameOption(type: ChoiceType.shortSale,
-          successText: '시스템 파멸 설계! 조작 자산의 취약점에 역공매도 폭탄을 던집니다.',
-          failText: '거대 자본의 무한 매수 조작에 감당 못 하고 청산됩니다.',
+          successText: '시스템 파멸 설계! 조작 전리품의 취약점에 역습 폭격 폭탄을 던집니다.',
+          failText: '거대 권세의 무한 회유 조작에 감당 못 하고 정리됩니다.',
           goldSuccess: 45000, expSuccess: 800, itemReward: '신화 장비 2종',
           goldFail: -30000, statFail: {TribeStat.leather: -6}),
       ]),
     GameEvent(id: 'SCR_011', chapter: 4, title: '11. 마지막 검은 목요일',
-      mainText: '의회가 대규모 인위적 폭락을 유도합니다. 대공황의 심장부에서 대장님의 선택은?',
+      mainText: '의회가 대규모 인위적 와해을 유도합니다. 대붕괴의 심장부에서 대장님의 선택은?',
       options: [
         GameOption(type: ChoiceType.aggressive,
-          successText: '"위기는 곧 기회!" 폭락한 의회 핵심 자산을 통째로 흡수해 실질적 지배자로 섰습니다.',
-          failText: '떨어지는 칼날에 심장이 뚫렸습니다. 전 자산이 바닥을 뚫고 증발합니다.',
+          successText: '"위기는 곧 기회!" 와해한 의회 핵심 전리품을 통째로 흡수해 실질적 지배자로 섰습니다.',
+          failText: '떨어지는 칼날에 심장이 뚫렸습니다. 전 전리품이 바닥을 뚫고 증발합니다.',
           goldSuccess: 30000, expSuccess: 600, itemReward: '신화 무기 해금',
           goldFail: -15000, statFail: {TribeStat.wildness: -4}),
         GameOption(type: ChoiceType.conservative,
-          successText: '완벽한 회피! 모든 화폐 자산을 고대 성벽에 숨겨 피해를 제로로 방어합니다.',
-          failText: '한발 늦었습니다. 규제 수수료가 금고를 들이받습니다.',
+          successText: '완벽한 회피! 모든 마나 전리품을 고대 성벽에 숨겨 피해를 제로로 방어합니다.',
+          failText: '한발 늦었습니다. 의회의 금령이 금고를 들이받습니다.',
           goldSuccess: 10000, expSuccess: 450,
           goldFail: -5000, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
-          successText: "전설적인 '빅쇼트'의 완성! 마지막 포지션이 정점에서 폭발하며 신의 반열에 오릅니다.",
-          failText: '의회가 초법적 셧다운을 감행하며 금고가 완전히 파산합니다.',
+          successText: "전설적인 '대역습'의 완성! 마지막 한 수이 정점에서 폭발하며 신의 반열에 오릅니다.",
+          failText: '의회가 초법적 전면 봉문을 감행하며 금고가 완전히 몰락합니다.',
           goldSuccess: 60000, expSuccess: 900, itemReward: '신화 반지 즉시 지급',
           goldFail: -35000, statFail: {TribeStat.leather: -6}, creditFail: -1),
         GameOption(type: ChoiceType.transcend, isHiddenS: true, sFailGameOver: true,
-          successText: '[초월적 흡수] 시스템의 허점을 역으로 장악, 대륙의 모든 통화 발행 권한을 '
+          successText: '[초월적 흡수] 시스템의 허점을 역으로 장악, 대륙의 모든 마나를 찍어낼 권한을 '
               '뺏어와 의회를 하급 부족으로 강등시킵니다.',
           failText: '[역풍의 종말] 의회의 숨겨진 양자 연산을 간파하지 못해 역공당하고, '
               '부족의 존재가 대륙 역사에서 영구 말소됩니다.',
@@ -895,10 +895,10 @@ class GameScript {
           successText: '새로운 의회의 주인이 되어 대륙의 모든 힘과 자원을 완벽하게 독점 지배하는 제왕이 됩니다.'),
         GameOption(type: ChoiceType.conservative, isEnding: true,
           endingTitle: '엔딩 B · 대륙의 수호자', endingAchievement: '평화주의자',
-          successText: '공공 신용 조합을 설립하여 모든 부족이 공평하게 마나를 나누는 상생의 시대를 엽니다.'),
+          successText: '모든 부족이 마나를 공평히 나누는 거대한 동맹을 세워, 약육강식이 끝난 상생의 시대를 엽니다.'),
         GameOption(type: ChoiceType.shortSale, isEnding: true,
           endingTitle: '엔딩 C · 원시 야생으로', endingAchievement: '자연주의자',
-          successText: '모든 화폐와 신용 시스템을 화산에 던져 파괴하고, 순수 원시 야생으로 회귀합니다.'),
+          successText: '의회의 낡은 율법과 모든 굴레를 화산에 던져 불태우고, 순수한 원시 야생으로 돌아갑니다.'),
       ]),
   ];
 }
@@ -1848,7 +1848,7 @@ class GameManager extends ChangeNotifier {
         creditScore: _state.creditScore - Cfg.delinquencyCreditPenalty,
         delinquentStreak: _state.delinquentStreak + 1,
       );
-      flashes.add('🩸 연체! 신용 -${Cfg.delinquencyCreditPenalty}');
+      flashes.add('🩸 연체! 경계 -${Cfg.delinquencyCreditPenalty}');
       if (_state.delinquentStreak >= Cfg.marginCallStreak ||
           _state.creditGrade >= 4) _marginCall();
     } else {
@@ -2023,7 +2023,7 @@ class GameManager extends ChangeNotifier {
     _busy = true;
     try {
       if (_state.creditGrade == 4) {
-        shopFlash = '⛔ 4등급(파산 임박) — 암시장 이용 봉쇄.';
+        shopFlash = '⛔ 4등급(몰락 임박) — 암시장 이용 봉쇄.';
         return;
       }
       if (_state.creditGrade > item.requiredGradeOrBetter) {
@@ -2043,7 +2043,7 @@ class GameManager extends ChangeNotifier {
         if (targetGrade == 3 && newScore < 350) newScore = 350;
         _state = _state.copyWith(
             bloodGold: newGold, creditGrade: targetGrade, creditScore: newScore);
-        shopFlash = '🧪 ${item.name} 사용 — 신용 $targetGrade등급 회복!';
+        shopFlash = '🧪 ${item.name} 사용 — 경계 $targetGrade등급 회복!';
       } else if (item.equipment != null) {
         _state = _state.copyWith(
             bloodGold: newGold, bag: [..._state.bag, item.equipment!]);
@@ -2084,7 +2084,7 @@ class GameManager extends ChangeNotifier {
     _state = _state.copyWith(
         creditScore: _state.creditScore + Cfg.restCreditRecover);
     flashes.clear();
-    flashes.add('🔥 정비 완료 — 신용 +${Cfg.restCreditRecover}');
+    flashes.add('🔥 정비 완료 — 경계 +${Cfg.restCreditRecover}');
     _overlay = Overlay.none;
     // 휴식도 1턴 소모
     _busy = true;
@@ -2304,7 +2304,7 @@ class GameManager extends ChangeNotifier {
       }
     }
     if (best == null) {
-      flashes.add('⚠ 마진콜 — 압류할 장비 없음.');
+      flashes.add('⚠ 의회의 빚받이 습격 — 압류할 장비 없음.');
       return;
     }
     if (fromEq && bestSlot != null) {
@@ -2313,7 +2313,7 @@ class GameManager extends ChangeNotifier {
       bag.remove(best);
     }
     _state = _state.copyWith(bag: bag, equipped: eq);
-    flashes.add('🔗 마진콜 — [${best.grade.label}] ${best.name} 압류!');
+    flashes.add('🔗 의회의 빚받이 습격 — [${best.grade.label}] ${best.name} 압류!');
   }
 
   void _destroyTopEquipment() {
@@ -2350,19 +2350,19 @@ class GameManager extends ChangeNotifier {
         creditGrade: Cfg.forcedGrade,
         graceRemaining: Cfg.graceTurns,
       );
-      flashes.add('💀 파산 루틴! 신용 4등급 · 유예 ${Cfg.graceTurns}턴');
+      flashes.add('💀 몰락 루틴! 경계 4등급 · 유예 ${Cfg.graceTurns}턴');
       tinyLine = Tiny.crisis;
     } else if (_state.bankruptcyActive) {
       if (gold > 0) {
         _state = _state.copyWith(bankruptcyActive: false, graceRemaining: 0);
-        flashes.add('✅ 파산 탈출!');
+        flashes.add('✅ 몰락 탈출!');
       } else {
         final g = _state.graceRemaining - 1;
         if (g <= 0) {
           _state = _state.copyWith(graceRemaining: 0, gameOver: true);
         } else {
           _state = _state.copyWith(graceRemaining: g);
-          flashes.add('⏳ 파산 유예 $g턴');
+          flashes.add('⏳ 몰락 유예 $g턴');
         }
       }
     }
@@ -2556,10 +2556,10 @@ class _TinyGateState extends State<_TinyGate> {
 
   void _markDone() {
     if (_done) return;
-    setState(() => _done = true);
-    // 버튼 등장 직후 짧은 쿨다운 — 스킵 탭의 관성으로 바로 안 눌리게
-    Timer(const Duration(milliseconds: 320), () {
-      if (mounted) setState(() => _btnReady = true);
+    // 타이핑이 끝나면 '다음 ▶'을 곧바로 활성 — 딜레이 없이 바로 진행.
+    setState(() {
+      _done = true;
+      _btnReady = true;
     });
   }
 
@@ -3097,6 +3097,8 @@ class _GameScreenState extends State<GameScreen> {
   Stage? _prevStage;
   String? _prevResultKey; // 같은 결과의 중복 타이머 방지
   Timer? _gateTimer;
+  // 선택한 '길'을 감행 전까지 무장 상태로 보관(작전 브리핑 → 감행 2단계).
+  GameOption? _armed;
 
   @override
   void initState() {
@@ -3113,14 +3115,16 @@ class _GameScreenState extends State<GameScreen> {
       _prevResultKey = key;
       _nextReady = false;
       _gateTimer?.cancel();
-      // 주사위(0.85s)+카운트업(1.1s) 연출을 충분히 본 뒤 활성
-      _gateTimer = Timer(const Duration(milliseconds: 1500), () {
+      // 주사위 굴림이 보이도록 아주 짧게만 지연 후 곧바로 '다음 ▶' 활성.
+      _gateTimer = Timer(const Duration(milliseconds: 450), () {
         if (mounted) setState(() => _nextReady = true);
       });
     }
     if (m.stage != Stage.resolution) {
       _prevResultKey = null;
     }
+    // 사건 결정 단계를 벗어나면 무장 해제(다음 사건에서 깨끗이 시작).
+    if (m.stage != Stage.story) _armed = null;
     _prevStage = m.stage;
     if (mounted) setState(() {});
   }
@@ -3187,7 +3191,8 @@ class _GameScreenState extends State<GameScreen> {
                   : _storyCenter(key: ValueKey('story_${m.activeEvent?.id}')),
             ),
           ),
-          TinyBubble(m.tinyLine),
+          // 타이니는 결정 단계엔 침묵(내용·선택지 가림 방지), 승패 결과에서만 반응.
+          if (isResolution) TinyBubble(m.tinyLine),
           isResolution ? _afterBar() : _choiceBar(),
         ]),
         if (crit && isResolution) const Positioned.fill(child: GoldFlash()),
@@ -3222,9 +3227,9 @@ class _GameScreenState extends State<GameScreen> {
           UI.chip('턴', '${s.turn}'),
           UI.chip('🩸', GameManager.fmt(s.bloodGold),
               color: s.bloodGold <= 0 ? const Color(0xFFE57373) : null),
-          // [온보딩] 신용 등급은 SCR_002에서 개방된 뒤 노출
+          // [온보딩] 경계 등급은 SCR_002에서 개방된 뒤 노출
           if (m.feat('credit'))
-            UI.chip('신용', '${s.creditGrade}등급', color: gradeColor),
+            UI.chip('경계', '${s.creditGrade}등급', color: gradeColor),
           UI.chip('Lv', '${s.level}'),
           UI.chip(m.isHyperActive ? '🚀' : '🔥', m.isHyperActive ? 'HW' : '야생'),
         ]),
@@ -3419,7 +3424,7 @@ class _GameScreenState extends State<GameScreen> {
     }
     final ev = m.activeEvent!;
     final s = m.state;
-    // [온보딩] 숨김 S형은 조건 충족 시, C형(역베팅)은 SCR_004에서 개방된 뒤 노출
+    // [온보딩] 숨김 S형은 조건 충족 시, C형(매복)은 SCR_004에서 개방된 뒤 노출
     final opts = ev.options.where((o) {
       if (o.isHiddenS) return s.sUnlocked;
       if (o.type == ChoiceType.shortSale && !m.feat('choice_c')) return false;
@@ -3427,6 +3432,10 @@ class _GameScreenState extends State<GameScreen> {
     }).toList();
     // 1회차 추천 유형: 평소 A형, 약탈 봉쇄 시 B형
     final recType = s.raidLocked ? ChoiceType.conservative : ChoiceType.aggressive;
+    // 길을 무장했으면 '작전 브리핑'을 띄워 한 박자 고민하게 한다(감행 전까지 주사위 보류).
+    if (_armed != null && opts.contains(_armed)) {
+      return _briefingPanel(_armed!, ev);
+    }
     return Container(
       padding: const EdgeInsets.all(10),
       color: const Color(0xFF130F0C),
@@ -3456,7 +3465,16 @@ class _GameScreenState extends State<GameScreen> {
             child: SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: locked ? null : () => m.choose(opt),
+                onPressed: locked
+                    ? null
+                    : () {
+                        // 엔딩 분기는 곧바로 확정, 일반 길은 '작전 브리핑'으로 무장.
+                        if (opt.isEnding) {
+                          m.choose(opt);
+                        } else {
+                          setState(() => _armed = opt);
+                        }
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: hidden
                       ? const Color(0xFF2A2410)
@@ -3521,6 +3539,110 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
+  // ── 작전 브리핑(미리보기) → 감행: 길을 고른 뒤 한 박자 고민하는 단계 ──
+  Widget _briefingPanel(GameOption opt, GameEvent ev) {
+    final dc = m.dcFor(opt.type, ev.chapter);
+    final chance = m.successChance(opt.type, dc);
+    final riskColor = chance >= 70
+        ? const Color(0xFF81C784)
+        : chance >= 40
+            ? const Color(0xFFE8C34A)
+            : const Color(0xFFE57373);
+    final riskLabel = chance >= 70
+        ? '발톱이 먼저 닿을 자리'
+        : chance >= 40
+            ? '숨을 고르고 노릴 자리'
+            : '목을 내건 한 수';
+    final hasItem = opt.itemReward != null && opt.itemReward!.isNotEmpty;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF130F0C),
+        border: Border(top: BorderSide(color: Color(0xFF8A6A2C), width: 2)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Text('⚔ 작전 브리핑',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE8A33D))),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+                color: const Color(0xFF241B15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF8A6A2C))),
+            child: Text('${opt.type.tag}형 · ${opt.type.concept}',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFF3EBDF))),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Text('${opt.type.stat.icon} ${opt.type.stat.label}의 길',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF9C8C7E))),
+          const Spacer(),
+          Text('$chance%',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: riskColor)),
+        ]),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 9,
+          child: Stack(children: [
+            Container(
+                decoration: BoxDecoration(
+                    color: const Color(0xFF2A2018), borderRadius: BorderRadius.circular(6))),
+            FractionallySizedBox(
+              widthFactor: (chance / 100).clamp(0.0, 1.0),
+              child: Container(
+                  decoration: BoxDecoration(color: riskColor, borderRadius: BorderRadius.circular(6))),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 5),
+        Text('$riskLabel · 운명의 눈 ${dc} 이상이면 적중',
+            style: TextStyle(fontSize: 11, color: riskColor)),
+        const SizedBox(height: 12),
+        Row(children: [
+          const Text('거머쥘 전리품', style: TextStyle(fontSize: 12, color: Color(0xFF9C8C7E))),
+          const Spacer(),
+          Text('🪙 +${GameManager.fmt(opt.goldSuccess)}',
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF81C784))),
+        ]),
+        if (hasItem) ...[
+          const SizedBox(height: 4),
+          Row(children: [
+            const Text('손에 들어올 무기', style: TextStyle(fontSize: 12, color: Color(0xFF9C8C7E))),
+            const Spacer(),
+            Text('🗡 ${opt.itemReward}',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFE8C66A))),
+          ]),
+        ],
+        const SizedBox(height: 4),
+        Row(children: [
+          const Text('빗나갈 때의 대가', style: TextStyle(fontSize: 12, color: Color(0xFF9C8C7E))),
+          const Spacer(),
+          Text(opt.goldFail == 0 ? '흘릴 피 없음' : '🩸 ${GameManager.fmt(opt.goldFail)}',
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFFE57373))),
+        ]),
+        const SizedBox(height: 14),
+        Row(children: [
+          Expanded(
+            child: UI.bigBtn('← 다른 길', const Color(0xFF4E4038), Colors.white,
+                () => setState(() => _armed = null)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 2,
+            child: UI.bigBtn('⚔ 감행 — 운명의 주사위', const Color(0xFFB7402E), Colors.white, () {
+              final o = _armed!;
+              setState(() => _armed = null);
+              m.choose(o);
+            }),
+          ),
+        ]),
+      ]),
+    );
+  }
+
   // ── 하단: 다음 / 레벨업 선택 ──
   Widget _afterBar() {
     if (m.pendingStatChoices.isNotEmpty) {
@@ -3535,7 +3657,7 @@ class _GameScreenState extends State<GameScreen> {
               style: const TextStyle(color: Color(0xFFE8A33D), fontWeight: FontWeight.bold)),
           if (m.tutorialActive) ...[
             const SizedBox(height: 4),
-            const Text('🔥야성→A형 약탈 · 👑영향력→B형 협상 · 🛡가죽→C형 역베팅에 강해집니다',
+            const Text('🔥야성→A형 약탈 · 👑영향력→B형 협상 · 🛡가죽→C형 매복에 강해집니다',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 10.5, height: 1.4, color: Color(0xFF9C8C7E))),
           ],
@@ -3818,7 +3940,7 @@ class _GameScreenState extends State<GameScreen> {
           UI.badge('🏆 ${s.endingAchievement}', const Color(0xFF9C7A3C)),
           const SizedBox(height: 10),
           Text(
-              '최종 자산 ${GameManager.fmt(s.bloodGold)} · Lv.${s.level} · 칭호 ${s.titles.length}종 · 사냥 ${s.huntWins}승',
+              '최종 전리품 ${GameManager.fmt(s.bloodGold)} · Lv.${s.level} · 칭호 ${s.titles.length}종 · 사냥 ${s.huntWins}승',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Color(0xFF9C8C7E), fontSize: 12)),
           const SizedBox(height: 24),
@@ -3977,7 +4099,7 @@ class _GameScreenState extends State<GameScreen> {
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(children: [
-          const Text('신용 등급별 가격 변동',
+          const Text('경계 등급별 값 변동',
               style: TextStyle(fontSize: 11, color: Color(0xFF9C8C7E))),
           const Spacer(),
           UI.badge(
