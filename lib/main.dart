@@ -289,6 +289,18 @@ const Map<String, Relic> kRelics = {
   'fang': Relic('fang', '복수의 송곳니', '🦷', RelicFx.comeback, 0.4, '오뚝이 컴백 보상 +40%'),
   'letter': Relic('letter', '의회의 밀서', '✉️', RelicFx.news, 1, '대륙 돌발 뉴스(악재) 면역'),
   'totem': Relic('totem', '야성의 토템', '🪬', RelicFx.streak, 0.05, '연승 보너스 +5%p 가중'),
+  'mane': Relic('mane', '폭군의 갈기', '🦁', RelicFx.cGold, 0.10, 'C형(매복) 성공 보상 +10%'),
+  'maw': Relic('maw', '굶주린 아가리', '🐊', RelicFx.huntGold, 0.20, '사냥 보상 +20%'),
+  'scale': Relic('scale', '강철 비늘', '🐉', RelicFx.upkeep, 0.10, '매 턴 유지비 -10%'),
+  'eye': Relic('eye', '매의 눈', '🦅', RelicFx.dice, 1, '모든 판정 +1'),
+  'spine': Relic('spine', '곧추선 등뼈', '🦔', RelicFx.minRoll, 1, '주사위 최소 눈금 +1 (상시)'),
+  'vein': Relic('vein', '황금 혈관', '🩸', RelicFx.income, 1500, '매 턴 시작 시 금고 +1,500'),
+  'osbone': Relic('osbone', '운명의 홀짝뼈', '🎲', RelicFx.jackpot, 0.08, '잭팟 확률 +8%p'),
+  'scar': Relic('scar', '오래된 흉터', '🪓', RelicFx.comeback, 0.30, '오뚝이 컴백 보상 +30%'),
+  'pack': Relic('pack', '무리의 함성', '🐺', RelicFx.streak, 0.04, '연승 보너스 +4%p 가중'),
+  'crown': Relic('crown', '약탈왕의 관', '👑', RelicFx.cGold, 0.08, 'C형(매복) 성공 보상 +8%'),
+  'tusk': Relic('tusk', '거대한 엄니', '🦣', RelicFx.huntGold, 0.15, '사냥 보상 +15%'),
+  'ash': Relic('ash', '잿더미의 맹세', '🔥', RelicFx.income, 1000, '매 턴 시작 시 금고 +1,000'),
 };
 
 // =============================================================================
@@ -317,6 +329,24 @@ const List<ShopItem> kBlackMarket = [
           note: 'C형(매복) 보상 +10%')),
   ShopItem('SHP_004', '몰락자의 기적 (포션)', 3000, 4, '즉시 경계 등급 1단계 상승(최대 2등급)',
       isCreditPotion: true),
+  ShopItem('SHP_005', '들개 가죽 갑옷', 8000, 3, '가죽 +3',
+      equipment: Equipment('SHP_005', '들개 가죽 갑옷', Grade.rare, EquipSlot.armor,
+          statBonus: {TribeStat.leather: 3})),
+  ShopItem('SHP_006', '맹수의 발톱', 15000, 2, '야성 +3',
+      equipment: Equipment('SHP_006', '맹수의 발톱', Grade.rare, EquipSlot.weapon,
+          statBonus: {TribeStat.wildness: 3})),
+  ShopItem('SHP_007', '권세가의 비단 망토', 20000, 2, '영향력 +3 · 가죽 +1',
+      equipment: Equipment('SHP_007', '권세가의 비단 망토', Grade.ancient, EquipSlot.armor,
+          statBonus: {TribeStat.influence: 3, TribeStat.leather: 1})),
+  ShopItem('SHP_008', '포식자의 송곳니 목걸이', 40000, 1, '야성 +3 · 가죽 +2',
+      equipment: Equipment('SHP_008', '포식자의 송곳니 목걸이', Grade.ancient, EquipSlot.accessory,
+          statBonus: {TribeStat.wildness: 3, TribeStat.leather: 2})),
+  ShopItem('SHP_009', '고대 거인의 등껍질', 55000, 1, '가죽 +5',
+      equipment: Equipment('SHP_009', '고대 거인의 등껍질', Grade.ancient, EquipSlot.armor,
+          statBonus: {TribeStat.leather: 5})),
+  ShopItem('SHP_010', '신화 타이거 군주의 인장', 90000, 1, '야성 +4 · 영향력 +3 · 가죽 +3',
+      equipment: Equipment('SHP_010', '신화 타이거 군주의 인장', Grade.mythic, EquipSlot.mythic,
+          statBonus: {TribeStat.wildness: 4, TribeStat.influence: 3, TribeStat.leather: 3})),
 ];
 
 // =============================================================================
@@ -363,6 +393,9 @@ const Map<String, Region> kRegions = {
         HuntTarget('이빨 없는 토끼 부족', TribeStat.wildness, 12, 12000, 100, -2000),
         HuntTarget('떠돌이 들개 약탈단', TribeStat.wildness, 14, 18000, 160, -4000,
             statLose: {TribeStat.wildness: -1}),
+        HuntTarget('숨어드는 살쾡이 도둑', TribeStat.influence, 13, 14000, 120, -2500),
+        HuntTarget('계곡의 비단뱀', TribeStat.leather, 15, 20000, 180, -4500,
+            statLose: {TribeStat.leather: -1}),
       ]),
   'plain': Region('plain', '무너지는 도미노 평원', '🏚️',
       [Color(0xFF2C2622), Color(0xFF14110F)], 2,
@@ -372,6 +405,9 @@ const Map<String, Region> kRegions = {
         HuntTarget('하이에나 무리', TribeStat.leather, 16, 26000, 240, -7000,
             statLose: {TribeStat.leather: -2}),
         HuntTarget('부도 부족 잔당', TribeStat.influence, 17, 30000, 280, -8000),
+        HuntTarget('잿더미 도굴꾼 무리', TribeStat.wildness, 17, 28000, 250, -7500),
+        HuntTarget('굶주린 평원 늑대왕', TribeStat.leather, 18, 34000, 300, -9000,
+            statLose: {TribeStat.wildness: -1}),
       ]),
   'market': Region('market', '암시장 뒷골목', '🏪',
       [Color(0xFF1E1A22), Color(0xFF0D0B10)], 0,
@@ -379,11 +415,14 @@ const Map<String, Region> kRegions = {
       hasShop: true),
   'tower': Region('tower', '마법공학 첨탑 도시', '🗼',
       [Color(0xFF1B2238), Color(0xFF0C0F1A)], 3,
-      '신기술 신기루이 하늘을 찌르는 첨탑의 도시. 광기와 혁신이 뒤섞입니다.',
+      '신기술 신기루가 하늘을 찌르는 첨탑의 도시. 광기와 혁신이 뒤섞입니다.',
       questEventIds: ['SCR_007', 'SCR_008', 'SCR_009'],
       hunts: [
         HuntTarget('폭주한 유령 부족', TribeStat.wildness, 19, 40000, 360, -10000,
             statLose: {TribeStat.wildness: -2}),
+        HuntTarget('마력 폭주 골렘', TribeStat.leather, 20, 44000, 380, -12000,
+            statLose: {TribeStat.leather: -2}),
+        HuntTarget('첨탑의 그림자 암살자', TribeStat.influence, 21, 48000, 400, -13000),
       ]),
   'throne': Region('throne', '그림자 의회 흑요석 왕좌', '🔥',
       [Color(0xFF3A0F0C), Color(0xFF160605)], 4,
@@ -397,6 +436,9 @@ const Map<String, Region> kRegions = {
         HuntTarget('굶주린 검투 맹수', TribeStat.wildness, 15, 22000, 200, -5000),
         HuntTarget('투기장 챔피언', TribeStat.leather, 20, 50000, 450, -15000,
             statLose: {TribeStat.leather: -2}),
+        HuntTarget('투기장 광란의 무리', TribeStat.wildness, 18, 38000, 340, -11000),
+        HuntTarget('전설의 백호 검투사', TribeStat.leather, 23, 70000, 600, -22000,
+            statLose: {TribeStat.leather: -3}),
       ]),
 };
 
@@ -445,6 +487,10 @@ const List<NewsDef> kNews = [
       null, 0, '글로벌 보너스 버프 작동'),
   NewsDef('NS_002', '검은 목요일의 대붕괴', 6, '즉시 마나 스톤 잔액 15% 강제 삭감',
       TribeStat.influence, 17, '전리품 삭감 0% 면제'),
+  NewsDef('NS_005', '대륙을 뒤흔든 대장님의 포효', 4, '대장님의 기세가 대륙에 퍼집니다',
+      null, 0, '다음 2턴 모든 길의 요구치가 한결 수월해집니다'),
+  NewsDef('NS_006', '겁먹은 부족들의 헌납 행렬', 5, '약한 부족들이 알아서 조공을 바칩니다',
+      null, 0, '다음 2턴 판정이 유리하게 작동합니다'),
 ];
 
 // =============================================================================
@@ -465,16 +511,12 @@ class Teach {
   // 게임을 처음 켰을 때 — 세계관·목적·타이니·핵심 조작을 짧은 호흡으로 한 장씩.
   static const List<String> prologue = [
     '…쿨럭. 차가운 핏물 웅덩이 속에서 대장님이 무거운 눈꺼풀을 들어 올립니다. 흐릿한 시야 끝, 누군가 대장님을 내려다보며 이를 드러내고 히죽 웃습니다.',
-    '크하핫… 살아 계시는군요, 대장님. 저는 타이니. 대장님의 그림자조공 마지막 송곳니입니다. 이 잿더미와 시체 더미 속에서 숨이 붙은 건… 대장님과 저, 둘뿐입니다.',
-    '기억나십니까. 어젯밤, \'보이지 않는 손\'의 사냥개 — 그림자 의회의 집행관 \'네오 맹수\'가 우리 둥지를 덮쳤습니다. 불길이 치솟았고, 평생 쌓은 전리품은 전부 놈들의 금고로 끌려갔습니다.',
-    '대장님은 마지막 한 마리가 쓰러질 때까지 발톱을 휘두르다 무릎 꿇으셨죠. 부족은… 모두 잃었습니다. 그런데도 대장님의 심장은 아직 뜁니다. 그게 무슨 뜻인지 아십니까?',
-    '복수입니다, 대장님. 빼앗긴 전리품 한 톨까지 되찾고, 그 핏빛 산더미 위에 의회 의장의 머리를 얹는 것. 대장님이 살아남은 단 하나의 이유죠.',
-    '이 대륙은 \'보이지 않는 손\'과 그 하수인 그림자 의회가 목을 조르고 있습니다. 약한 부족은 짓밟히고, 전리품은 전부 놈들의 금고로 빨려 들어갑니다. 대장님이 당한 것처럼요.',
-    '하지만 대장님은 다릅니다. 가장 사납고 굶주린 맹수… 이 대륙을 통째로 집어삼킬 단 하나의 포식자십니다. 이 타이니가 송곳니를 걸고 보증합니다.',
-    '목표는 단 하나. 남쪽 황금 계곡부터 짓밟아 올라가, 흑요석 왕좌의 의회를 갈가리 찢고 — 빼앗긴 모든 것을 피로 돌려받는 것!',
-    '방법은 간단합니다. 사냥감을 만나면 \'길\'을 고르고 운명의 주사위를 굴립니다. 주사위가 요구치(DC)를 넘으면 전리품이 쏟아지죠!',
-    '길은 둘입니다. 🔥A형 약탈 — 거칠고 위험하지만 전리품이 큽니다. 👑B형 협상 — 얌전하지만 안전하죠. 버튼의 % 는 성공 확률, 높을수록 안전합니다.',
-    '자, 첫 사냥감이 코앞입니다. 망설이지 마십시오 — ⭐ 표시가 제 추천입니다. 오늘부터 이 대륙은 대장님의 사냥터입니다. 가시죠, 대장님!!',
+    '크하핫… 살아 계시는군요, 대장님. 저는 타이니 — 대장님의 마지막 송곳니입니다.',
+    '어젯밤 그림자 의회의 집행관이 둥지를 불태우고 전리품을 끌고 갔습니다. 살아남은 건 대장님과 저뿐.',
+    '심장이 아직 뜁니다. 그 뜻은 하나 — 복수. 빼앗긴 모든 것을, 그 위에 의회 의장의 머리까지.',
+    '목표는 흑요석 왕좌. 남쪽 계곡부터 짓밟고 올라가 의회를 찢어발기는 겁니다.',
+    '길을 고르고 운명의 주사위를 굴리십시오. 요구치(DC)를 넘으면 전리품이 쏟아집니다. (% 가 높을수록 안전)',
+    '첫 사냥감이 코앞입니다. 별빛이 앉은 길… 제 코는 거기서 피 냄새를 맡는군요. 가시죠, 대장님.',
   ];
   static const String credit =
       '대장님, 화면 위에 \'경계\' 등급이 새로 떴습니다. 의회가 매기는 대장님의 위험도예요 — 숫자가 작을수록(1등급에 가까울수록) 좋습니다. 금고가 마르면 등급이 떨어지니, 매 턴 빠져나가는 유지비를 늘 살피십시오!';
@@ -709,7 +751,7 @@ class GameScript {
           goldFail: -9900, creditFail: -2),
       ]),
     GameEvent(id: 'SCR_003', chapter: 1, title: '03. 꽃망울이 터지는 날',
-      mainText: '꿀송이가 창고에서 무더기로 썩어간다는 밀서가 도착했습니다. 신기루이 터지기 직전입니다.',
+      mainText: '꿀송이가 창고에서 무더기로 썩어간다는 밀서가 도착했습니다. 신기루가 터지기 직전입니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
           successText: '기적이 일어났습니다! 의회의 기습 지원으로 단숨에 되살아납니다.',
@@ -760,7 +802,7 @@ class GameScript {
           goldSuccess: 4500, expSuccess: 200, itemReward: '일반 방패',
           goldFail: -2000, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
-          successText: '의회의 오판을 징벌했습니다! 와해을 정확히 저격합니다.',
+          successText: '의회의 오판을 징벌했습니다! 와해를 정확히 저격합니다.',
           failText: '금령에 막혔습니다! 약탈 정지로 전리품이 동결됩니다.',
           goldSuccess: 20000, expSuccess: 450, itemReward: '고대 무기',
           goldFail: -14000, statFail: {TribeStat.leather: -5}),
@@ -861,7 +903,7 @@ class GameScript {
           goldFail: -30000, statFail: {TribeStat.leather: -6}),
       ]),
     GameEvent(id: 'SCR_011', chapter: 4, title: '11. 마지막 검은 목요일',
-      mainText: '의회가 대규모 인위적 와해을 유도합니다. 대붕괴의 심장부에서 대장님의 선택은?',
+      mainText: '의회가 대규모 인위적 와해를 유도합니다. 대붕괴의 심장부에서 대장님의 선택은?',
       options: [
         GameOption(type: ChoiceType.aggressive,
           successText: '"위기는 곧 기회!" 와해한 의회 핵심 전리품을 통째로 흡수해 실질적 지배자로 섰습니다.',
