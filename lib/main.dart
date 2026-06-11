@@ -448,6 +448,51 @@ const List<NewsDef> kNews = [
 ];
 
 // =============================================================================
+//  [Onboarding] 1회차 점진적 기능 개방 키 + 타이니 학습 대사
+//   - 연구 기반: 첫 60초 몰입 / 한 번에 다 열지 않고 핵심→보조→메타 순차 개방 /
+//     글이 아니라 '그 기능을 쓰는 순간' 맥락으로 가르친다(learn-by-doing).
+//   - 2회차부터는 전부 해금 + 가이드 OFF (GameManager.feat / tutorialActive).
+// =============================================================================
+const Set<String> kAllFeatures = {
+  'credit', 'hunt', 'shop', 'worldmap', 'character', 'choice_c',
+};
+const Set<String> kAllTeachKeys = {
+  'core_taught', 'stats_taught', 'hyper_taught', 'boss_taught', 's_taught',
+};
+
+class Teach {
+  const Teach._();
+  // 게임을 처음 켰을 때 — 세계관·목적·타이니·핵심 조작을 짧은 호흡으로 한 장씩.
+  static const List<String> prologue = [
+    '크하핫… 드디어 눈을 뜨셨군요, 대장님. 저는 타이니. 대장님의 그림자이자 송곳니입니다. 죽는 날까지 충성을 바치겠습니다.',
+    '이 대륙은 \'보이지 않는 손\'과 그 하수인 그림자 의회가 목을 조르고 있습니다. 약한 부족은 짓밟히고, 전리품은 전부 그들의 금고로 빨려 들어가죠.',
+    '하지만 대장님은 다릅니다. 가장 사납고 굶주린 맹수… 이 대륙을 통째로 집어삼킬 단 하나의 포식자십니다.',
+    '목표는 단 하나. 남쪽 황금 계곡부터 짓밟아 올라가, 흑요석 왕좌의 의회를 갈가리 찢고 대륙의 주인이 되는 것!',
+    '방법은 간단합니다. 사냥감을 만나면 \'길\'을 고르고 운명의 주사위를 굴립니다. 주사위가 요구치(DC)를 넘으면 전리품이 쏟아지죠!',
+    '길은 둘입니다. 🔥A형 약탈 — 거칠고 위험하지만 전리품이 큽니다. 👑B형 협상 — 얌전하지만 안전하죠. 버튼의 % 는 성공 확률, 높을수록 안전합니다.',
+    '자, 첫 사냥감이 코앞입니다. 고민 마십시오 — ⭐ 표시가 제 추천입니다. 1회차엔 일단 저만 믿고 따라오시면 됩니다, 대장님!',
+  ];
+  static const String credit =
+      '대장님, 화면 위에 \'신용\' 등급이 새로 떴습니다. 의회가 매기는 대장님의 위험도예요 — 숫자가 작을수록(1등급에 가까울수록) 좋습니다. 금고가 마르면 등급이 떨어지니, 매 턴 빠져나가는 유지비를 늘 살피십시오!';
+  static const String hunt =
+      '전리품이 더 고프시죠? ⚔ \'사냥\'이 열렸습니다, 대장님. 사건 사이사이 들짐승을 약탈해 금고를 불릴 수 있습니다. 피 냄새가 향긋하군요!';
+  static const String chapter2c =
+      '제2장입니다, 대장님. 모두가 무너지는 평원에선 홀로 비웃는 자가 거부가 됩니다. 새 길 🛡C형 \'역베팅\'이 열렸습니다 — 가장 위험하지만 가장 짜릿한 한 방이죠!';
+  static const String worldmap =
+      '🗺 \'월드맵\'도 열렸습니다. 이미 짓밟은 사냥터로 되돌아가 전리품을 더 챙기거나, 다음 무대를 노릴 수 있습니다.';
+  static const String shop =
+      '🏪 \'암시장\'이 열렸습니다, 대장님. 약탈한 전리품으로 비밀 병기를 사들여 송곳니를 더 날카롭게 가십시오!';
+  static const String stats =
+      '대장님의 격이 올랐습니다! 이제 🎒 \'캐릭터\'에서 세 가지 야성 — 🔥야성·👑영향력·🛡가죽 — 을 키울 수 있습니다. 야성은 A형 약탈, 영향력은 B형 협상, 가죽은 C형 역베팅에 힘을 보탭니다. 즐겨 쓰는 길을 키우면 주사위가 더 잘 풀립니다!';
+  static const String hyper =
+      '제3장, 첨탑의 도시입니다. 이곳의 광기는 대장님께 유리합니다 — 초반의 기세 🚀 \'도파민 고속도로\'가 주사위에 날개를 답니다. 식기 전에 몰아치십시오!';
+  static const String boss =
+      '종장입니다… 흑요석 왕좌가 코앞입니다. 곧 의회 의장과의 최후 결전이 시작됩니다. 그동안 키운 모든 송곳니와 가죽을 남김없이 쏟아부으십시오, 대장님!';
+  static const String sForm =
+      '대장님!! 모든 조건이 갖춰졌습니다 — 전설의 ⭐S형 \'초월\'이 열렸습니다! 의회의 시스템 그 자체를 손아귀에 넣는 유일한 길입니다. 다만 실패하면 모든 걸 잃을 수도 있으니, 각오가 서면 휘두르십시오!';
+}
+
+// =============================================================================
 //  [Data] 타이니 충성 NPC 대사
 // =============================================================================
 class Tiny {
@@ -872,6 +917,8 @@ class PlayerState {
   final int interestPenaltyTurns, acDcReliefTurns;
   final int cShortWinStreak, newsLeatherDefenseStreak;
   final int huntWins, totalEarned;
+  // [온보딩] 1회차 점진적 기능 개방 — 해금된 기능/학습 완료 키 집합
+  final Set<String> features;
 
   const PlayerState({
     required this.turn,
@@ -903,6 +950,7 @@ class PlayerState {
     this.newsLeatherDefenseStreak = 0,
     this.huntWins = 0,
     this.totalEarned = 0,
+    this.features = const {},
   });
 
   factory PlayerState.newGame() => PlayerState(
@@ -940,6 +988,7 @@ class PlayerState {
         'ipt': interestPenaltyTurns, 'acr': acDcReliefTurns,
         'csw': cShortWinStreak, 'nld': newsLeatherDefenseStreak,
         'hw': huntWins, 'te': totalEarned,
+        'feat': features.toList(),
       };
 
   static PlayerState fromJson(Map<String, dynamic> j) {
@@ -975,6 +1024,9 @@ class PlayerState {
       interestPenaltyTurns: j['ipt'] as int, acDcReliefTurns: j['acr'] as int,
       cShortWinStreak: j['csw'] as int, newsLeatherDefenseStreak: j['nld'] as int,
       huntWins: j['hw'] as int, totalEarned: j['te'] as int,
+      // 'feat' 키가 없는 구버전 세이브 = 이미 진행 중이던 슬롯 → 전부 해금으로 마이그레이션
+      features: (j['feat'] as List?)?.map((e) => e as String).toSet() ??
+          {...kAllFeatures, ...kAllTeachKeys},
     );
   }
 
@@ -1054,6 +1106,7 @@ class PlayerState {
     int? newsLeatherDefenseStreak,
     int? huntWins,
     int? totalEarned,
+    Set<String>? features,
   }) =>
       PlayerState(
         turn: turn ?? this.turn,
@@ -1086,6 +1139,7 @@ class PlayerState {
             newsLeatherDefenseStreak ?? this.newsLeatherDefenseStreak,
         huntWins: huntWins ?? this.huntWins,
         totalEarned: totalEarned ?? this.totalEarned,
+        features: features ?? this.features,
       );
 }
 
@@ -1140,9 +1194,13 @@ class GameManager extends ChangeNotifier {
   int successStreak = 0; // 연속 성공 횟수
 
   // ── 타이니 포커스 게이트 (타이니가 화면을 잡고 단독 발화) ──
-  bool tinyFocus = false;
+  //  [온보딩] 순차 대사 큐 — 프롤로그/기능 개방 설명을 한 장씩 넘기며 보여준다.
+  final List<String> focusQueue = [];
+  bool get tinyFocus => focusQueue.isNotEmpty;
+  String get focusLine => focusQueue.isEmpty ? '' : focusQueue.first;
+  void _focusAll(Iterable<String> lines) => focusQueue.addAll(lines);
   void dismissTinyFocus() {
-    tinyFocus = false;
+    if (focusQueue.isNotEmpty) focusQueue.removeAt(0);
     notifyListeners();
   }
 
@@ -1273,6 +1331,10 @@ class GameManager extends ChangeNotifier {
 
   // 1회차 전체 동안 가이드 ON (2회차 전까지 무지성 따라가기)
   bool get tutorialActive => playthrough == 1;
+
+  // [온보딩] 기능 해금 여부 — 2회차부터는 전부 ON(타이니 도움 최소화),
+  //  1회차는 진행하며 하나씩 개방된 것만 노출.
+  bool feat(String key) => playthrough > 1 || _state.features.contains(key);
 
   String _pick(List<String> pool) => pool[_random.nextInt(pool.length)];
 
@@ -1441,6 +1503,59 @@ class GameManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ===========================================================================
+  //  [온보딩] 사건 진입 시 기능 개방 + 맥락 학습 (1회차 한정, 키별 1회)
+  // ===========================================================================
+  void _maybeTeach(String id) {
+    if (!tutorialActive) return; // 2회차+ : 가이드/개방 연출 없음
+    final f = Set<String>.of(_state.features);
+    final q = <String>[];
+    void open(String key, String line) {
+      if (f.contains(key)) return;
+      f.add(key);
+      q.add(line);
+    }
+
+    switch (id) {
+      case 'SCR_001':
+        // 핵심: 세계관·목적·조작·A/B 차이 (프롤로그 시퀀스)
+        if (!f.contains('core_taught')) {
+          f.add('core_taught');
+          q.addAll(Teach.prologue);
+        }
+        break;
+      case 'SCR_002':
+        open('credit', Teach.credit);
+        break;
+      case 'SCR_003':
+        open('hunt', Teach.hunt);
+        break;
+      case 'SCR_004':
+        open('choice_c', Teach.chapter2c);
+        open('worldmap', Teach.worldmap);
+        break;
+      case 'SCR_005':
+        open('shop', Teach.shop);
+        break;
+      case 'SCR_007':
+        open('hyper_taught', Teach.hyper);
+        break;
+      case 'SCR_010':
+        open('boss_taught', Teach.boss);
+        break;
+    }
+    // 조건 충족 시 S형(초월) 개방 안내 — 어느 사건에서든 1회
+    if (_state.sUnlocked && !f.contains('s_taught')) {
+      f.add('s_taught');
+      q.add(Teach.sForm);
+    }
+
+    if (f.length != _state.features.length) {
+      _state = _state.copyWith(features: f);
+    }
+    if (q.isNotEmpty) _focusAll(q);
+  }
+
   void _setStory(String id, {bool keepTiny = false}) {
     activeEvent = GameScript.byId(id);
     lastResult = null;
@@ -1452,11 +1567,8 @@ class GameManager extends ChangeNotifier {
     if (!keepTiny) {
       tinyLine = tutorialActive ? _pick(Tiny.guide) : _pick(Tiny.storyIntro);
     }
-    // 포커스 게이트: 각 지역(무대) 첫 사건에 진입할 때만 1회 — 흐름 방해 최소화.
-    // (게임 시작=황금 계곡 첫 사건 = 처음 안내 / 새 지역 진입마다 1회)
-    final firstOfRegion = currentRegion.questEventIds.isNotEmpty &&
-        currentRegion.questEventIds.first == id;
-    tinyFocus = firstOfRegion;
+    // [온보딩] 새 기능 개방 + 맥락 학습 대사를 포커스 큐에 적재(1회차 한정).
+    _maybeTeach(id);
   }
 
   // 다음 사건 자동 로드 (지역 메뉴 없이 끊김없이)
@@ -2116,6 +2228,12 @@ class GameManager extends ChangeNotifier {
           flashes.add('⬆ Lv.$next! 스탯 보너스 선택');
         }
         tinyLine = Tiny.levelUp;
+        // [온보딩] 첫 레벨업 → 캐릭터/스탯 기능 개방 + 설명(다음 사건 진입 시 게이트로 노출)
+        if (tutorialActive && !_state.features.contains('character')) {
+          _state = _state.copyWith(
+              features: {..._state.features, 'character', 'stats_taught'});
+          _focusAll([Teach.stats]);
+        }
         if (next >= 2 && !_state.unlockedRegions.contains('arena')) {
           _state = _state.copyWith(
               unlockedRegions: {..._state.unlockedRegions, 'arena'});
@@ -2327,7 +2445,7 @@ class GameManager extends ChangeNotifier {
     playthrough += 1; // 회차 증가 → 2회차부터 가이드 해제
     lastWasFail = false;
     successStreak = 0;
-    tinyFocus = false;
+    focusQueue.clear();
     // 같은 슬롯에서 새 회차 바로 시작(자동 저장 유지)
     beginAdventure();
   }
@@ -2449,13 +2567,21 @@ class _TinyGateState extends State<_TinyGate> {
           if (!_done) _tw.currentState?.skip();
         },
         child: Container(
-          color: Colors.black.withValues(alpha: 0.88),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          // 불투명 배경 — 뒤 사건 설명창이 비쳐 글자가 겹쳐 보이던 문제 제거.
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF161009), Color(0xFF0B0907)]),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 타이니 말풍선(타이프라이터)
-              Container(
+              // 타이니 말풍선(타이프라이터) — 긴 대사는 내부 스크롤로 안전 처리
+              Flexible(
+              child: SingleChildScrollView(
+              child: Container(
                 padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
@@ -2500,6 +2626,8 @@ class _TinyGateState extends State<_TinyGate> {
                     ]),
                   ),
                 ]),
+              ),
+              ),
               ),
               const SizedBox(height: 22),
               // 진행은 '계속 ▶' 버튼으로만 (아무데나 탭 X)
@@ -3063,11 +3191,11 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  // ── 타이니 포커스 게이트 ──
+  // ── 타이니 포커스 게이트 (순차 대사 큐) ──
   Widget _tinyFocusGate() {
     return _TinyGate(
-      key: ValueKey('gate_${m.tinyLine}'),
-      line: m.tinyLine,
+      key: ValueKey('gate_${m.focusQueue.length}_${m.focusLine.hashCode}'),
+      line: m.focusLine,
       onContinue: m.dismissTinyFocus,
     );
   }
@@ -3088,7 +3216,9 @@ class _GameScreenState extends State<GameScreen> {
           UI.chip('턴', '${s.turn}'),
           UI.chip('🩸', GameManager.fmt(s.bloodGold),
               color: s.bloodGold <= 0 ? const Color(0xFFE57373) : null),
-          UI.chip('신용', '${s.creditGrade}등급', color: gradeColor),
+          // [온보딩] 신용 등급은 SCR_002에서 개방된 뒤 노출
+          if (m.feat('credit'))
+            UI.chip('신용', '${s.creditGrade}등급', color: gradeColor),
           UI.chip('Lv', '${s.level}'),
           UI.chip(m.isHyperActive ? '🚀' : '🔥', m.isHyperActive ? 'HW' : '야생'),
         ]),
@@ -3126,16 +3256,20 @@ class _GameScreenState extends State<GameScreen> {
                     style: const TextStyle(fontSize: 10, color: Color(0xFFB8ADA2))),
               ]),
         ),
-        _iconBtn('🗺', '월드맵', () => m.openOverlay(Overlay.worldMap)),
-        _iconBtn('⚔', '사냥', () {
-          if (m.currentRegion.hunts.isNotEmpty) {
-            m.openOverlay(Overlay.hunt);
-          } else {
-            m.travelTo('arena');
-          }
-        }),
-        _iconBtn('🏪', '상점', () => m.travelTo('market')),
-        _iconBtn('🎒', '캐릭터', () => m.openOverlay(Overlay.character)),
+        // [온보딩] 보조/메타 기능은 진행하며 하나씩 개방된 것만 노출
+        if (m.feat('worldmap'))
+          _iconBtn('🗺', '월드맵', () => m.openOverlay(Overlay.worldMap)),
+        if (m.feat('hunt'))
+          _iconBtn('⚔', '사냥', () {
+            if (m.currentRegion.hunts.isNotEmpty) {
+              m.openOverlay(Overlay.hunt);
+            } else {
+              m.travelTo('arena');
+            }
+          }),
+        if (m.feat('shop')) _iconBtn('🏪', '상점', () => m.travelTo('market')),
+        if (m.feat('character'))
+          _iconBtn('🎒', '캐릭터', () => m.openOverlay(Overlay.character)),
         const SizedBox(width: 4),
       ]),
     );
@@ -3279,7 +3413,12 @@ class _GameScreenState extends State<GameScreen> {
     }
     final ev = m.activeEvent!;
     final s = m.state;
-    final opts = ev.options.where((o) => !o.isHiddenS || s.sUnlocked).toList();
+    // [온보딩] 숨김 S형은 조건 충족 시, C형(역베팅)은 SCR_004에서 개방된 뒤 노출
+    final opts = ev.options.where((o) {
+      if (o.isHiddenS) return s.sUnlocked;
+      if (o.type == ChoiceType.shortSale && !m.feat('choice_c')) return false;
+      return true;
+    }).toList();
     // 1회차 추천 유형: 평소 A형, 약탈 봉쇄 시 B형
     final recType = s.raidLocked ? ChoiceType.conservative : ChoiceType.aggressive;
     return Container(
@@ -3388,6 +3527,12 @@ class _GameScreenState extends State<GameScreen> {
           Text('⬆ Lv.$lv 보너스 — 스탯 +$amt 선택',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Color(0xFFE8A33D), fontWeight: FontWeight.bold)),
+          if (m.tutorialActive) ...[
+            const SizedBox(height: 4),
+            const Text('🔥야성→A형 약탈 · 👑영향력→B형 협상 · 🛡가죽→C형 역베팅에 강해집니다',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 10.5, height: 1.4, color: Color(0xFF9C8C7E))),
+          ],
           const SizedBox(height: 8),
           Row(
             children: TribeStat.values
