@@ -2714,10 +2714,10 @@ class _DiceRollState extends State<DiceRoll> with SingleTickerProviderStateMixin
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             gradient: LinearGradient(
-                colors: [widget.color, widget.color.withValues(alpha: 0.55)]),
+                colors: [widget.color, widget.color.withOpacity(0.55)]),
             boxShadow: [
               BoxShadow(
-                  color: widget.color.withValues(alpha: _settled ? 0.6 : 0.3),
+                  color: widget.color.withOpacity(_settled ? 0.6 : 0.3),
                   blurRadius: _settled ? 22 : 8,
                   spreadRadius: 1),
             ],
@@ -2790,7 +2790,7 @@ class _TinyBubbleState extends State<TinyBubble> with SingleTickerProviderStateM
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                  color: const Color(0xFFE8A33D).withValues(alpha: 0.15 + glow * 0.5),
+                  color: const Color(0xFFE8A33D).withOpacity(0.15 + glow * 0.5),
                   blurRadius: 10 + glow * 16,
                   spreadRadius: glow * 2),
             ],
@@ -3000,7 +3000,7 @@ class _PulseState extends State<Pulse> with SingleTickerProviderStateMixin {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-                color: widget.glow.withValues(alpha: 0.25 + _c.value * 0.45),
+                color: widget.glow.withOpacity(0.25 + _c.value * 0.45),
                 blurRadius: 8 + _c.value * 14,
                 spreadRadius: _c.value * 2),
           ],
@@ -3019,7 +3019,7 @@ class UI {
   static Widget badge(String text, Color color) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.18),
+            color: color.withOpacity(0.18),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: color)),
         child: Text(text,
@@ -3481,7 +3481,7 @@ class _GameScreenState extends State<GameScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
                           color: (locked ? const Color(0xFFE57373) : riskColor)
-                              .withValues(alpha: 0.18),
+                              .withOpacity(0.18),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: locked ? const Color(0xFFE57373) : riskColor),
                         ),
