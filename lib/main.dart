@@ -272,12 +272,15 @@ class World {
   double w = 0, h = 0; // 아레나 크기
   double time = 0; // 생존 시간(초)
   int kills = 0;
+  int _mileShown = 0; // 생존 마일스톤 연출 카운터
 
   // 플레이어
   double px = 0, py = 0;
   double hp = 120, baseMaxHp = 120;
-  double baseSpeed = 138;
+  double baseSpeed = 156;
   double pr = 11; // 반지름
+  // 광기(어흥!) 궁극기 — 처치로 차오르고, 해방 시 화면 대포효 + 광폭화
+  double rage = 0, rageMax = 100, berserkT = 0;
   int level = 1;
   double xp = 0, xpNext = 5;
   double orbitAngle = 0;
@@ -335,12 +338,14 @@ class World {
     _loadRecords();
   }
 
-  // ── 파생 스탯 (캐릭터 배수 반영) ──
+  // ── 파생 스탯 (캐릭터 배수 + 광폭화 반영) ──
   double get maxHp => (baseMaxHp + 25 * hideLv) * charHp;
-  double get speed => baseSpeed * (1 + 0.10 * windLv) * charSpeed;
+  double get speed =>
+      baseSpeed * (1 + 0.10 * windLv) * charSpeed * (berserkT > 0 ? 1.18 : 1.0);
   double get pickupRange => 58 + 16.0 * hungerLv;
-  double get dmgMult => (1 + 0.12 * wildLv) * charDmg;
-  double get fireMult => 1 + 0.10 * rageLv;
+  double get dmgMult => (1 + 0.12 * wildLv) * charDmg * (berserkT > 0 ? 1.35 : 1.0);
+  double get fireMult => (1 + 0.10 * rageLv) * (berserkT > 0 ? 1.6 : 1.0);
+  bool get rageReady => rage >= rageMax;
 
   void toggleMute() => sfx.muted = !sfx.muted;
 
@@ -349,6 +354,7 @@ class World {
     phase = GPhase.playing;
     time = 0;
     kills = 0;
+    _mileShown = 0;
     level = 1;
     xp = 0;
     xpNext = 4;
@@ -382,8 +388,32 @@ class World {
     px = w / 2;
     py = h / 2;
     hp = maxHp;
+    rage = 0;
+    berserkT = 0;
     jActive = false;
     dirx = diry = 0;
+  }
+
+  // 광기 해방 — 어흥! 화면 전체 대포효 + 광폭화
+  void unleashRoar() {
+    if (phase != GPhase.playing || !rageReady) return;
+    rage = 0;
+    berserkT = 5.0;
+    final dmg = 60 + level * 12.0;
+    for (final e in enemies) {
+      _hurt(e, dmg);
+      final d = sqrt((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py));
+      if (d > 0.1) {
+        e.x += (e.x - px) / d * 70;
+        e.y += (e.y - py) / d * 70;
+      }
+    }
+    pulses.add(Pulse(px, py, max(w, h), 0.55, P.gold));
+    pulses.add(Pulse(px, py, max(w, h) * 0.6, 0.45, P.blood));
+    _float(px, py - 30, '어 흥 !!', P.gold, 30);
+    _shakeAdd(18);
+    _hapticBig = true;
+    sfx.play('boss');
   }
 
   // ── 입력 ──
@@ -398,25 +428,20 @@ class World {
 
   void joyMove(double x, double y) {
     if (!jActive) return;
-    double dx = x - jbx, dy = y - jby;
+    final dx = x - jbx, dy = y - jby;
     final len = sqrt(dx * dx + dy * dy);
-    const maxR = 52.0;
-    if (len > maxR) {
-      dx = dx / len * maxR;
-      dy = dy / len * maxR;
-    }
-    jkx = jbx + dx;
-    jky = jby + dy;
-    if (len > 6) {
-      dirx = dx / max(len, 0.001);
-      diry = dy / max(len, 0.001);
-      if (len > maxR) {
-        dirx = (x - jbx) / len;
-        diry = (y - jby) / len;
-      }
-    } else {
+    const maxR = 50.0, dead = 5.0;
+    if (len < dead) {
+      jkx = x;
+      jky = y;
       dirx = diry = 0;
+      return;
     }
+    final knob = len > maxR ? maxR : len;
+    jkx = jbx + dx / len * knob;
+    jky = jby + dy / len * knob;
+    dirx = dx / len; // 데드존만 넘으면 즉시 풀스피드 방향 (반응 깔끔)
+    diry = dy / len;
   }
 
   void joyEnd() {
@@ -430,6 +455,18 @@ class World {
     if (w <= 0 || h <= 0) return;
     if (dt > 0.05) dt = 0.05;
     time += dt;
+    if (berserkT > 0) berserkT = max(0, berserkT - dt);
+    // 생존 마일스톤 — 짧은 서사로 뽕
+    if (_mileShown < 1 && time >= 60) {
+      _mileShown = 1;
+      _float(px, py - 52, '1분 — 대륙이 네 포효를 듣기 시작한다', P.gold, 15);
+    } else if (_mileShown < 2 && time >= 120) {
+      _mileShown = 2;
+      _float(px, py - 52, '2분 — 그림자 의회가 너를 두려워한다', P.gold, 15);
+    } else if (_mileShown < 3 && time >= 180) {
+      _mileShown = 3;
+      _float(px, py - 52, '3분 — 너의 이름이 곧 전설이 된다', P.gold, 15);
+    }
 
     // 이동
     if (dirx != 0 || diry != 0) {
@@ -529,6 +566,7 @@ class World {
     final base = 240 + time * 6;
     enemies.add(Enemy(_eid++, x.clamp(0.0, w), y.clamp(0.0, h), base, base, 40, 22 + time * 0.08, 30, EType.boss));
     pulses.add(Pulse(px, py, 200, 0.6, P.blood));
+    _float(px, py - 60, '⚠ 의회의 거대 맹수 강림', P.red, 18);
     _shakeAdd(12);
     _hapticBig = true;
     sfx.play('boss');
@@ -743,6 +781,7 @@ class World {
       if (e.hp <= 0 && !e.dead) {
         e.dead = true;
         kills += 1;
+        rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)));
         if (e.type == EType.boss) {
           _float(e.x, e.y - e.radius, 'BOSS 격파!', P.gold, 18);
           _shakeAdd(10);
@@ -987,6 +1026,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               ),
             ),
             if (world.phase == GPhase.playing || world.phase == GPhase.levelup) _hud(),
+            if (world.phase == GPhase.playing) _rageButton(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.dead) _death(),
@@ -1040,6 +1080,57 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             const SizedBox(height: 5),
             // 경험치
             _bar(xpFrac, P.cyan, height: 6),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  // ── 어흥! 광기 궁극기 버튼 (우하단) ──
+  Widget _rageButton() {
+    final frac = (world.rage / world.rageMax).clamp(0.0, 1.0);
+    final ready = world.rageReady;
+    return Positioned(
+      right: 18,
+      bottom: 22,
+      child: GestureDetector(
+        onTap: () {
+          if (ready) setState(() => world.unleashRoar());
+        },
+        child: SizedBox(
+          width: 78,
+          height: 78,
+          child: Stack(alignment: Alignment.center, children: [
+            // 충전 링
+            SizedBox(
+              width: 78,
+              height: 78,
+              child: CircularProgressIndicator(
+                value: frac,
+                strokeWidth: 6,
+                backgroundColor: Colors.black.withOpacity(0.45),
+                valueColor: AlwaysStoppedAnimation(ready ? P.gold : P.blood),
+              ),
+            ),
+            // 본체
+            Container(
+              width: 60,
+              height: 60,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: ready ? P.gold.withOpacity(0.92) : Colors.black.withOpacity(0.5),
+                boxShadow: ready
+                    ? [BoxShadow(color: P.gold.withOpacity(0.7), blurRadius: 14)]
+                    : null,
+                border: Border.all(color: ready ? Colors.white : P.line, width: 1.5),
+              ),
+              child: Text('어흥',
+                  style: TextStyle(
+                      color: ready ? Colors.black : P.muted,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold)),
+            ),
           ]),
         ),
       ),
@@ -1103,10 +1194,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           const Text('어흥 : 야수의 생존',
               style: TextStyle(
                   color: P.gold, fontSize: 27, fontWeight: FontWeight.bold, letterSpacing: 2)),
-          const SizedBox(height: 8),
-          const Text('드래그로 이동 · 공격은 자동',
+          const SizedBox(height: 10),
+          const Text('그림자 의회가 네 둥지를 불태우고 무리를 끌고 갔다.\n살아남은 건 너 하나. 이제 — 사냥의 시간이다.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: P.muted, fontSize: 13)),
+              style: TextStyle(color: P.parch, fontSize: 13, height: 1.6)),
+          const SizedBox(height: 6),
+          const Text('드래그로 이동 · 공격 자동 · 광기가 차면 [어흥!]',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: P.muted, fontSize: 12)),
           const SizedBox(height: 18),
           const Text('맹수를 고르십시오',
               style: TextStyle(color: P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
