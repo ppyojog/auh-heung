@@ -418,10 +418,20 @@ class World {
   double heraldT = 0, _heraldCd = 0, _lowCd = 0;
   GPhase shopReturn = GPhase.title; // 상점에서 돌아갈 화면
   int _streakKillMark = 0;
-  // 동적 난이도 (타이니 선택으로 변동) — 높을수록 적 강함 + XP·광기 획득 ↑(빠른 성장)
-  double diff = 1.0;
-  TinyChoice? tinyChoice;
+  // 난이도 = 스테이지 기반. 높을수록 적 강함 + XP·광기 획득 ↑(빠른 성장)
+  double diff = 0.85;
+  int stage = 1, maxStage = 1; // 현재/최고 도달 스테이지(최고는 슬롯별 영구 저장)
+  double _stageT = 45; // 자동 상승 타이머
+  TinyChoice? tinyChoice; // (구 난이도 대화 — 미사용)
   double _choiceCd = 14, _advT = 48;
+
+  void _applyStageDiff() => diff = (0.85 + (stage - 1) * 0.13).clamp(0.6, 4.0).toDouble();
+
+  // 타이니 메뉴에서 스테이지 ±조정 — 도달한 최고 스테이지까지만 (클리어한 곳만 선택)
+  void setStage(int s) {
+    stage = s.clamp(1, maxStage);
+    _applyStageDiff();
+  }
   int level = 1;
   double xp = 0, xpNext = 5;
   double orbitAngle = 0;
@@ -472,7 +482,6 @@ class World {
     _heraldCd = 0.8;
   }
 
-  int get stage => 1 + (time ~/ 45).toInt(); // 45초마다 +1, 계속 증가 → 성장/escalation 체감
 
   void openMenu() {
     if (phase == GPhase.playing) phase = GPhase.menu;
@@ -644,10 +653,9 @@ class World {
     _heraldCd = 0;
     _lowCd = 0;
     _streakKillMark = 0;
-    diff = 1.0;
-    tinyChoice = null;
-    _choiceCd = 14;
-    _advT = 48;
+    stage = 1;
+    _stageT = 45;
+    _applyStageDiff();
     jActive = false;
     dirx = diry = 0;
     _say(_pick(Tiny.greet), force: true, face: '🐯');
@@ -763,11 +771,14 @@ class World {
     if (dt > 0.05) dt = 0.05;
     time += dt;
     if (berserkT > 0) berserkT = max(0, berserkT - dt);
-    // 펫 타이니 — 플레이어 좌상단을 부드럽게 따라다님
+    // 펫 타이니 — 이동 방향의 '뒤'를 360° 따라다님(움직이는 쪽 반대편으로 자동 조정)
     if (petHappyT > 0) petHappyT = max(0, petHappyT - dt);
+    final moving0 = dirx != 0 || diry != 0;
+    final tpx = moving0 ? px - dirx * 28 : px - 22;
+    final tpy = moving0 ? py - diry * 28 : py - 24;
     final k = (dt * 7).clamp(0.0, 1.0);
-    petX += (px - 20 - petX) * k;
-    petY += (py - 24 - petY) * k;
+    petX += (tpx - petX) * k;
+    petY += (tpy - petY) * k;
     // 충신 타이머
     if (heraldT > 0) heraldT -= dt;
     if (_heraldCd > 0) _heraldCd -= dt;
@@ -793,18 +804,18 @@ class World {
       _streakKillMark = kills;
       _say(_pick(Tiny.streak), face: '😼');
     }
-    // 타이니 난이도 선택 제안 (쿨다운 기반)
-    if (_choiceCd > 0) _choiceCd -= dt;
-    if (_advT > 0) _advT -= dt;
-    if (_choiceCd <= 0) {
-      if (hp < maxHp * 0.32 && diff > 0.65) {
-        _offerRetreat();
-        return;
-      } else if (hp > maxHp * 0.6 && _advT <= 0 && diff < 2.0 && time > 40) {
-        _advT = 55;
-        _offerAdvance();
-        return;
+    // 스테이지 자동 상승 — 플레이할수록 점점 사나워짐 (45초마다 +1)
+    _stageT -= dt;
+    if (_stageT <= 0) {
+      _stageT = 45;
+      stage += 1;
+      if (stage > maxStage) {
+        maxStage = stage;
+        _saveMeta();
       }
+      _applyStageDiff();
+      _say('스테이지 $stage 진입! 더 사나운 놈들이 몰려옵니다!', force: true, face: '😼');
+      _shakeAdd(6);
     }
 
     // 이동
@@ -1001,6 +1012,7 @@ class World {
           final rr = radius + e.radius;
           if ((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy) <= rr * rr) {
             _hurt(e, dmg);
+            _float(e.x, e.y - e.radius - 4, dmg.round().toString(), P.green, 12);
           }
         }
         pulses.add(Pulse(ox, oy, radius, 0.5, P.green));
@@ -1019,6 +1031,7 @@ class World {
           final d = sqrt((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py));
           if (d <= radius + e.radius) {
             _hurt(e, dmg);
+            _float(e.x, e.y - e.radius - 4, dmg.round().toString(), P.gold, 12);
             // 살짝 밀어내기
             if (d > 0.1) {
               e.x += (e.x - px) / d * push;
@@ -1100,6 +1113,9 @@ class World {
           final rr = fr + e.radius;
           if ((fx - e.x) * (fx - e.x) + (fy - e.y) * (fy - e.y) <= rr * rr) {
             _hurt(e, fdps * dt);
+            if (rng.nextDouble() < 0.04) {
+              _float(e.x, e.y - e.radius - 4, fdps.round().toString(), P.cyan, 11);
+            }
           }
         }
       }
@@ -1329,6 +1345,7 @@ class World {
     skin = 'default';
     lastDaily = '';
     dailyJustClaimed = false;
+    maxStage = 1;
     bestTime = 0;
     bestKills = 0;
     _loadRecords();
@@ -1379,6 +1396,7 @@ class World {
       ownedSkins.addAll(((j['skins'] as List?) ?? []).map((e) => e as String));
       skin = j['skin'] as String? ?? 'default';
       lastDaily = j['daily'] as String? ?? '';
+      maxStage = (j['maxst'] as int?) ?? 1;
     } catch (_) {}
   }
 
@@ -1391,6 +1409,7 @@ class World {
         'skins': ownedSkins.toList(),
         'skin': skin,
         'daily': lastDaily,
+        'maxst': maxStage,
       });
     } catch (_) {}
   }
@@ -1621,7 +1640,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       child: GestureDetector(
         onTap: () => setState(() => world.openMenu()),
         child: Opacity(
-          opacity: 0.62,
+          opacity: 0.8,
           child: Container(
             width: 46,
             height: 46,
@@ -1658,14 +1677,29 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             border: Border.all(color: world.threatColor.withOpacity(0.7)),
           ),
           child: Column(children: [
+            // 스테이지 선택 (도달한 최고까지만) — 올리면 강하고 보상↑, 내리면 수월
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('현재 스테이지', style: TextStyle(color: P.muted, fontSize: 12)),
-              Text('STAGE ${world.stage}',
-                  style: TextStyle(color: world.threatColor, fontSize: 16, fontWeight: FontWeight.bold)),
+              const Text('스테이지 선택', style: TextStyle(color: P.muted, fontSize: 12)),
+              Row(children: [
+                _stageBtn('−', world.stage > 1, () => setState(() => world.setStage(world.stage - 1))),
+                const SizedBox(width: 10),
+                Text('STAGE ${world.stage}',
+                    style: TextStyle(
+                        color: world.threatColor, fontSize: 17, fontWeight: FontWeight.bold)),
+                const SizedBox(width: 10),
+                _stageBtn('＋', world.stage < world.maxStage,
+                    () => setState(() => world.setStage(world.stage + 1))),
+              ]),
             ]),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text('최고 도달 STAGE ${world.maxStage} 까지 선택 가능',
+                  style: const TextStyle(color: P.muted, fontSize: 10)),
+            ),
             const SizedBox(height: 6),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('적 강함', style: TextStyle(color: P.muted, fontSize: 12)),
+              const Text('적 강함 (보상도 비례↑)', style: TextStyle(color: P.muted, fontSize: 12)),
               Text('×${world.diff.toStringAsFixed(2)}',
                   style: TextStyle(color: world.threatColor, fontSize: 14, fontWeight: FontWeight.bold)),
             ]),
@@ -2356,6 +2390,25 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               world.phase = GPhase.shop;
             }), dark: false),
       ]),
+    );
+  }
+
+  Widget _stageBtn(String label, bool enabled, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 32,
+        height: 32,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: enabled ? P.gold.withOpacity(0.85) : const Color(0xFF2A2018),
+          border: Border.all(color: enabled ? P.gold : P.line),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                color: enabled ? Colors.black : P.muted, fontSize: 18, fontWeight: FontWeight.bold)),
+      ),
     );
   }
 
