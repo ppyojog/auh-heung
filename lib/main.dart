@@ -291,7 +291,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, choice, dead, shop }
+enum GPhase { title, playing, levelup, choice, dead, shop, menu }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -339,9 +339,11 @@ class World {
   double pr = 11; // 반지름
   // 광기(어흥!) 궁극기 — 처치로 차오르고, 해방 시 화면 대포효 + 광폭화
   double rage = 0, rageMax = 75, berserkT = 0;
-  // 충신 herald (텍스트 대사)
+  // 충신 herald (텍스트 대사 + 표정으로 톤 전달)
   String heraldLine = '';
+  String heraldFace = '🐯';
   double heraldT = 0, _heraldCd = 0, _lowCd = 0;
+  GPhase shopReturn = GPhase.title; // 상점에서 돌아갈 화면
   int _streakKillMark = 0;
   // 동적 난이도 (타이니 선택으로 변동) — 높을수록 적 강함 + XP·광기 획득 ↑(빠른 성장)
   double diff = 1.0;
@@ -388,12 +390,27 @@ class World {
 
   String _pick(List<String> p) => p[rng.nextInt(p.length)];
 
-  // 충신 대사 출력 (force=false면 잡담 도배 방지 쿨다운)
-  void _say(String line, {double dur = 2.8, bool force = false}) {
+  // 충신 대사 출력 (force=false면 잡담 도배 방지 쿨다운). face=표정으로 톤 전달.
+  void _say(String line, {double dur = 3.2, bool force = false, String face = '🐯'}) {
     if (!force && _heraldCd > 0) return;
     heraldLine = line;
+    heraldFace = face;
     heraldT = dur;
     _heraldCd = 0.8;
+  }
+
+  int get stage => 1 + (time ~/ 60).toInt();
+
+  void openMenu() {
+    if (phase == GPhase.playing) phase = GPhase.menu;
+  }
+
+  void resume() {
+    if (phase == GPhase.menu) phase = GPhase.playing;
+  }
+
+  void giveUp() {
+    if (phase == GPhase.menu || phase == GPhase.playing) _onDeath();
   }
 
   // 조이스틱
@@ -519,7 +536,7 @@ class World {
     _advT = 48;
     jActive = false;
     dirx = diry = 0;
-    _say(_pick(Tiny.greet), force: true);
+    _say(_pick(Tiny.greet), force: true, face: '🐯');
   }
 
   // 광기 해방 — 어흥! 화면 전체 대포효 + 광폭화
@@ -539,7 +556,7 @@ class World {
     pulses.add(Pulse(px, py, max(w, h), 0.55, P.gold));
     pulses.add(Pulse(px, py, max(w, h) * 0.6, 0.45, P.blood));
     _float(px, py - 30, '어 흥 !!', P.gold, 30);
-    _say(_pick(Tiny.ult), force: true);
+    _say(_pick(Tiny.ult), force: true, face: '🔥');
     _shakeAdd(18);
     _hapticBig = true;
     sfx.play('boss');
@@ -559,12 +576,12 @@ class World {
         diff = max(0.6, diff - 0.4);
         hp = min(maxHp, hp + maxHp * 0.35);
         _thin(0.55);
-        _say('현명하십니다. 호랑이는 물러설 때를 아는 법이죠.', force: true);
+        _say('현명하십니다. 호랑이는 물러설 때를 아는 법이죠.', force: true, face: '🐯');
       },
       '🔥 계속 사냥한다', '그대로 — 위험하지만 멋짐',
       () {
         rage = min(rageMax, rage + rageMax * 0.3);
-        _say('크하핫—! 역시 호랑이답습니다, 물러섬을 모르는 분!', force: true);
+        _say('크하핫—! 역시 호랑이답습니다, 물러섬을 모르는 분!', force: true, face: '😼');
       },
     );
   }
@@ -576,10 +593,10 @@ class World {
       '🐅 더 사나운 곳으로', '성장↑·위험↑ (방심하면 한 입)',
       () {
         diff = min(2.2, diff + 0.45);
-        _say('이래야 사냥할 맛이 나죠! 단— 방심하면 한 입에 끝납니다.', force: true);
+        _say('이래야 사냥할 맛이 나죠! 단— 방심하면 한 입에 끝납니다.', force: true, face: '😼');
       },
       '🌿 천천히 간다', '변동 없음 — 신중',
-      () => _say('신중함도 맹수의 덕목이죠.', force: true),
+      () => _say('신중함도 맹수의 덕목이죠.', force: true, face: '🐯'),
     );
   }
 
@@ -639,23 +656,23 @@ class World {
     // 생존 마일스톤 — 충신이 떠받든다
     if (_mileShown < 1 && time >= 60) {
       _mileShown = 1;
-      _say('1분 생존! 대륙이 대장님의 포효를 듣기 시작했습니다!', force: true);
+      _say('1분 생존! 대륙이 대장님의 포효를 듣기 시작했습니다!', force: true, face: '🌟');
     } else if (_mileShown < 2 && time >= 120) {
       _mileShown = 2;
-      _say('2분! 이제 그림자 의회가 대장님 이름만 들어도 떱니다!', force: true);
+      _say('2분! 이제 그림자 의회가 대장님 이름만 들어도 떱니다!', force: true, face: '🌟');
     } else if (_mileShown < 3 && time >= 180) {
       _mileShown = 3;
-      _say('3분 생존… 대장님은 이미 살아있는 전설이십니다!', force: true);
+      _say('3분 생존… 대장님은 이미 살아있는 전설이십니다!', force: true, face: '🌟');
     }
     // 위기 시 가스라이팅성 응원
     if (_lowCd <= 0 && hp < maxHp * 0.25) {
       _lowCd = 9;
-      _say(_pick(Tiny.low));
+      _say(_pick(Tiny.low), face: '😿');
     }
     // 학살 연쇄
     if (kills - _streakKillMark >= 30) {
       _streakKillMark = kills;
-      _say(_pick(Tiny.streak));
+      _say(_pick(Tiny.streak), face: '😼');
     }
     // 타이니 난이도 선택 제안 (쿨다운 기반)
     if (_choiceCd > 0) _choiceCd -= dt;
@@ -702,7 +719,7 @@ class World {
       _hapticBig = true;
       _shakeAdd(9);
       sfx.play('level');
-      _say(_pick(Tiny.level), force: true);
+      _say(_pick(Tiny.level), force: true, face: '😺');
       pulses.add(Pulse(px, py, 120, 0.5, P.gold));
       _openLevelUp();
     }
@@ -988,7 +1005,7 @@ class World {
         rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)) * diff);
         if (e.type == EType.boss) {
           _float(e.x, e.y - e.radius, 'BOSS 격파!', P.gold, 18);
-          _say(_pick(Tiny.boss), force: true);
+          _say(_pick(Tiny.boss), force: true, face: '😼');
           _shakeAdd(10);
           _hapticBig = true;
         }
@@ -1253,11 +1270,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ),
             if (world.phase == GPhase.playing ||
                 world.phase == GPhase.levelup ||
-                world.phase == GPhase.choice) _hud(),
+                world.phase == GPhase.choice ||
+                world.phase == GPhase.menu) _hud(),
             if (world.phase == GPhase.playing) _rageButton(),
+            if (world.phase == GPhase.playing) _tinyCallButton(),
             if (world.phase == GPhase.playing && world.heraldT > 0) _heraldBubble(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.shop) _shopOverlay(),
+            if (world.phase == GPhase.menu) _menuOverlay(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.choice && world.tinyChoice != null) _choiceOverlay(),
             if (world.phase == GPhase.dead) _death(),
@@ -1322,7 +1342,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   // ── 충신 '타이니' 말풍선 (상단, 무음 텍스트) ──
   Widget _heraldBubble() {
     final ht = world.heraldT;
-    final appear = ((2.8 - ht) / 0.22).clamp(0.0, 1.0); // 등장 진행 0→1
+    final appear = ((3.2 - ht) / 0.22).clamp(0.0, 1.0); // 등장 진행 0→1
     final fade = ht > 0.5 ? 1.0 : (ht / 0.5).clamp(0.0, 1.0);
     final pop = 0.82 + 0.18 * appear + sin(appear * 3.1416) * 0.07; // 살짝 오버슈트 팝
     final bounce = sin(world.time * 6) * 2.2; // 타이니 얼굴 통통
@@ -1340,25 +1360,25 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 constraints: const BoxConstraints(maxWidth: 440),
                 padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xF2140E09),
+                  color: const Color(0xA6140E09), // 반투명 — 뒤 적이 보이게
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: P.gold, width: 1.6),
-                  boxShadow: [BoxShadow(color: P.gold.withOpacity(0.45), blurRadius: 12)],
+                  border: Border.all(color: P.gold.withOpacity(0.9), width: 1.6),
+                  boxShadow: [BoxShadow(color: P.gold.withOpacity(0.35), blurRadius: 10)],
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  // 통통 튀는 타이니 얼굴 (원형 배지)
+                  // 통통 튀는 타이니 얼굴 (표정으로 톤 전달 — 안 읽어도 인식)
                   Transform.translate(
                     offset: Offset(0, bounce),
                     child: Container(
-                      width: 30,
-                      height: 30,
+                      width: 32,
+                      height: 32,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: P.gold.withOpacity(0.18),
-                        border: Border.all(color: P.gold.withOpacity(0.8)),
+                        color: P.gold.withOpacity(0.22),
+                        border: Border.all(color: P.gold.withOpacity(0.85)),
                       ),
-                      child: const Text('🐯', style: TextStyle(fontSize: 17)),
+                      child: Text(world.heraldFace, style: const TextStyle(fontSize: 18)),
                     ),
                   ),
                   const SizedBox(width: 9),
@@ -1385,6 +1405,84 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ),
         ),
       ),
+    );
+  }
+
+  // ── 타이니 호출 버튼 (시리/빅스비식) — 누르면 메뉴(상점·난이도·설정) ──
+  Widget _tinyCallButton() {
+    return Positioned(
+      top: 72,
+      right: 10,
+      child: GestureDetector(
+        onTap: () => setState(() => world.openMenu()),
+        child: Container(
+          width: 46,
+          height: 46,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.black.withOpacity(0.45),
+            border: Border.all(color: P.gold.withOpacity(0.75), width: 1.5),
+          ),
+          child: const Text('🐯', style: TextStyle(fontSize: 22)),
+        ),
+      ),
+    );
+  }
+
+  // ── 타이니 메뉴 (호출 시) — 난이도 정보 + 상점/음소거/포기 ──
+  Widget _menuOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.8),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(22),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('🐯 타이니', style: TextStyle(color: P.gold, fontSize: 22, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        const Text('부르셨습니까, 대장님?', style: TextStyle(color: P.muted, fontSize: 12)),
+        const SizedBox(height: 16),
+        Container(
+          width: 300,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: P.panel,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: world.threatColor.withOpacity(0.7)),
+          ),
+          child: Column(children: [
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('현재 위협도', style: TextStyle(color: P.muted, fontSize: 12)),
+              Text('${world.threatLabel}  ${"★" * world.threatStars}',
+                  style: TextStyle(color: world.threatColor, fontSize: 14, fontWeight: FontWeight.bold)),
+            ]),
+            const SizedBox(height: 6),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('적 강함', style: TextStyle(color: P.muted, fontSize: 12)),
+              Text('×${world.diff.toStringAsFixed(2)}',
+                  style: const TextStyle(color: P.parch, fontSize: 13, fontWeight: FontWeight.bold)),
+            ]),
+            const SizedBox(height: 6),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('스테이지 · 생존', style: TextStyle(color: P.muted, fontSize: 12)),
+              Text('${world.stage}단계 · ${World.mmss(world.time)}',
+                  style: const TextStyle(color: P.parch, fontSize: 13, fontWeight: FontWeight.bold)),
+            ]),
+          ]),
+        ),
+        const SizedBox(height: 18),
+        _bigBtn('▶  이어하기', P.gold, () => setState(() => world.resume())),
+        const SizedBox(height: 10),
+        _bigBtn('🦷  전리품 상점', P.panel, () => setState(() {
+              world.shopReturn = GPhase.menu;
+              world.phase = GPhase.shop;
+            }), dark: false),
+        const SizedBox(height: 10),
+        _bigBtn(world.sfx.muted ? '🔇  소리 켜기' : '🔊  소리 끄기', P.panel,
+            () => setState(() => world.toggleMute()),
+            dark: false),
+        const SizedBox(height: 10),
+        _bigBtn('🏳  포기하고 마치기', P.blood, () => setState(() => world.giveUp()), dark: false),
+      ]),
     );
   }
 
@@ -1553,9 +1651,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           const SizedBox(height: 22),
           _bigBtn('⚔  생존 시작', sel.color, () => setState(() => world.startGame())),
           const SizedBox(height: 12),
-          _bigBtn('🦷  전리품 상점  (보유 ${world.fangs})', P.panel,
-              () => setState(() => world.phase = GPhase.shop),
-              dark: false),
+          _bigBtn('🦷  전리품 상점  (보유 ${world.fangs})', P.panel, () => setState(() {
+                world.shopReturn = GPhase.title;
+                world.phase = GPhase.shop;
+              }), dark: false),
           const SizedBox(height: 16),
         ]),
       ),
@@ -1645,7 +1744,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
-            child: _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = GPhase.title),
+            child: _bigBtn('← 돌아가기', P.panel,
+                () => setState(() => world.phase = world.shopReturn),
                 dark: false),
           ),
         ]),
@@ -1802,8 +1902,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         const SizedBox(height: 20),
         _bigBtn('🔥  다시 일어선다', P.blood, () => setState(() => world.startGame()), dark: false),
         const SizedBox(height: 10),
-        _bigBtn('🦷  전리품 상점', P.panel, () => setState(() => world.phase = GPhase.shop),
-            dark: false),
+        _bigBtn('🦷  전리품 상점', P.panel, () => setState(() {
+              world.shopReturn = GPhase.dead;
+              world.phase = GPhase.shop;
+            }), dark: false),
       ]),
     );
   }
@@ -1963,17 +2065,22 @@ class WorldPainter extends CustomPainter {
 
     canvas.restore();
 
-    // 조이스틱 (흔들림 영향 X — UI 성격)
-    if (w.jActive) {
-      canvas.drawCircle(
-          Offset(w.jbx, w.jby),
-          52,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 3
-            ..color = Colors.white.withOpacity(0.16));
-      canvas.drawCircle(Offset(w.jkx, w.jky), 22, Paint()..color = P.gold.withOpacity(0.30));
-    }
+    // 방향키 — 하단 좌측 고정, 반투명. 노브는 현재 진행 방향을 반영. (플레이 중에만)
+    if (w.phase != GPhase.playing) return;
+    final jx = 74.0, jy = size.height - 78.0, baseR = 46.0;
+    canvas.drawCircle(Offset(jx, jy), baseR,
+        Paint()..color = Colors.white.withOpacity(w.jActive ? 0.10 : 0.05));
+    canvas.drawCircle(
+        Offset(jx, jy),
+        baseR,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..color = Colors.white.withOpacity(w.jActive ? 0.22 : 0.12));
+    final kx = jx + w.dirx * (baseR - 18);
+    final ky = jy + w.diry * (baseR - 18);
+    canvas.drawCircle(Offset(kx, ky), 18,
+        Paint()..color = P.gold.withOpacity(w.jActive ? 0.45 : 0.22));
   }
 
   void _grid(Canvas canvas, Size size) {
