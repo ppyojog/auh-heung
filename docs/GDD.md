@@ -1,9 +1,12 @@
 # 어흥 : 야수의 생존 — Game Design Document
 
 > **AuhHeung : Beast Survivor** · 뱀파이어 서바이버즈류(bullet heaven)
-> 정본 설계서. 버전 관리는 git 히스토리로 한다(파일명에 버전 숫자 X).
-> 밸런스 데이터는 **`AuhHeung_DB.xlsx`**(엑셀, 보기용) 참조 — 생성·정본은 [`build_db.py`](build_db.py).
-> 코드: [`../lib/main.dart`](../lib/main.dart).
+>
+> **📚 문서 역할 분담**
+> - **이 GDD(.md) = '역사·설계 느낌'** — 정체성·시스템 개요·왜·변천사 (서술형, GitHub서 바로 읽힘)
+> - **`AuhHeung_DB.xlsx` = '수치 느낌'** — 무기/적/밸런스 숫자 (엑셀, 보기·편집용 / 정본 [`build_db.py`](build_db.py))
+>
+> 버전 관리는 git 히스토리(파일명에 버전 숫자 X). 코드: [`../lib/main.dart`](../lib/main.dart).
 
 - **그래픽·사운드: 에셋 0** — 전부 코드 생성(CustomPainter 네온 / Web Audio 없이 PCM 합성).
 - **빌드:** Flutter 3.24.5 · 단일 파일 `lib/main.dart` · `--web-renderer html`
