@@ -1321,35 +1321,66 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   // ── 충신 '타이니' 말풍선 (상단, 무음 텍스트) ──
   Widget _heraldBubble() {
-    final fade = world.heraldT > 0.5 ? 1.0 : (world.heraldT / 0.5).clamp(0.0, 1.0);
+    final ht = world.heraldT;
+    final appear = ((2.8 - ht) / 0.22).clamp(0.0, 1.0); // 등장 진행 0→1
+    final fade = ht > 0.5 ? 1.0 : (ht / 0.5).clamp(0.0, 1.0);
+    final pop = 0.82 + 0.18 * appear + sin(appear * 3.1416) * 0.07; // 살짝 오버슈트 팝
+    final bounce = sin(world.time * 6) * 2.2; // 타이니 얼굴 통통
     return Positioned(
-      top: 84,
-      left: 14,
-      right: 14,
+      top: 80,
+      left: 12,
+      right: 12,
       child: IgnorePointer(
         child: Center(
           child: Opacity(
             opacity: fade,
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 430),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.62),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: P.gold.withOpacity(0.7)),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Text('🐯', style: TextStyle(fontSize: 17)),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(world.heraldLine,
-                      style: const TextStyle(
-                          color: P.goldSoft,
-                          fontSize: 12.5,
-                          height: 1.3,
-                          fontWeight: FontWeight.w600)),
+            child: Transform.scale(
+              scale: pop,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 440),
+                padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xF2140E09),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: P.gold, width: 1.6),
+                  boxShadow: [BoxShadow(color: P.gold.withOpacity(0.45), blurRadius: 12)],
                 ),
-              ]),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  // 통통 튀는 타이니 얼굴 (원형 배지)
+                  Transform.translate(
+                    offset: Offset(0, bounce),
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: P.gold.withOpacity(0.18),
+                        border: Border.all(color: P.gold.withOpacity(0.8)),
+                      ),
+                      child: const Text('🐯', style: TextStyle(fontSize: 17)),
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Flexible(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('타이니',
+                            style: TextStyle(
+                                color: P.gold, fontSize: 9.5, fontWeight: FontWeight.bold)),
+                        Text(world.heraldLine,
+                            style: const TextStyle(
+                                color: P.goldSoft,
+                                fontSize: 12.5,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                ]),
+              ),
             ),
           ),
         ),
@@ -2008,44 +2039,138 @@ class WorldPainter extends CustomPainter {
     }
   }
 
+  // 플레이어 — 캐릭터별 외형 + 코드 절차 애니메이션(숨쉬기·통통·눈깜빡·꼬리). 귀엽게.
   void _player(Canvas canvas) {
     final hurt = w.contactCdView > 0;
-    final col = hurt ? P.red : P.gold;
-    // 넓은 안광
-    canvas.drawCircle(Offset(w.px, w.py), w.pr * 3.0, Paint()..color = col.withOpacity(0.12));
-    // 귀
-    final ear = Path()
-      ..moveTo(w.px - w.pr * 0.9, w.py - w.pr * 0.5)
-      ..lineTo(w.px - w.pr * 0.4, w.py - w.pr * 1.25)
-      ..lineTo(w.px - w.pr * 0.1, w.py - w.pr * 0.6)
-      ..close()
-      ..moveTo(w.px + w.pr * 0.9, w.py - w.pr * 0.5)
-      ..lineTo(w.px + w.pr * 0.4, w.py - w.pr * 1.25)
-      ..lineTo(w.px + w.pr * 0.1, w.py - w.pr * 0.6)
-      ..close();
-    canvas.drawPath(ear, Paint()..color = col);
-    // 얼굴 (코어 + 밝은 림)
-    _glow(canvas, w.px, w.py, w.pr, col, core: 1.0);
-    canvas.drawCircle(
-        Offset(w.px, w.py),
-        w.pr,
+    final id = w.charIndex.clamp(0, kChars.length - 1);
+    final ch = kChars[id];
+    final col = hurt ? P.red : ch.color;
+    final r = w.pr;
+    final t = w.time;
+    final moving = w.dirx != 0 || w.diry != 0;
+    // 통통 튀는 숨쉬기/걸음 + squash&stretch
+    final bob = sin(t * (moving ? 10.0 : 3.0));
+    final cx = w.px;
+    final cy = w.py + bob * (moving ? 2.0 : 1.0);
+    final sq = 1 + (moving ? bob * 0.10 : bob * 0.045); // 세로 스케일
+    final fw = r * 2 / (1 + (sq - 1) * 0.5); // 가로 보정
+    final fh = r * 2 * sq;
+
+    // 안광
+    canvas.drawCircle(Offset(cx, cy), r * 3.0, Paint()..color = col.withOpacity(0.12));
+
+    // 꼬리 (뒤에서 살랑) — 버팔로는 생략
+    if (id != 2) {
+      final wag = sin(t * 5) * r * 1.4;
+      final tail = Path()
+        ..moveTo(cx, cy + r * 0.5)
+        ..quadraticBezierTo(cx + wag, cy + r * 1.3, cx + wag * 1.2, cy + r * 0.4);
+      canvas.drawPath(
+          tail,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 4
+            ..strokeCap = StrokeCap.round
+            ..color = col.withOpacity(0.9));
+    }
+
+    final earTwitch = sin(t * 2.3) * r * 0.08;
+    final earPaint = Paint()..color = col;
+    if (id == 1) {
+      // 흑표 — 길고 뾰족한 귀
+      final ears = Path()
+        ..moveTo(cx - r * 0.75, cy - r * 0.4)
+        ..lineTo(cx - r * 0.45 + earTwitch, cy - r * 1.55)
+        ..lineTo(cx - r * 0.05, cy - r * 0.55)
+        ..close()
+        ..moveTo(cx + r * 0.75, cy - r * 0.4)
+        ..lineTo(cx + r * 0.45 - earTwitch, cy - r * 1.55)
+        ..lineTo(cx + r * 0.05, cy - r * 0.55)
+        ..close();
+      canvas.drawPath(ears, earPaint);
+    } else if (id == 2) {
+      // 무쇠뿔 — 양옆으로 휜 뿔
+      final hp = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5
+        ..strokeCap = StrokeCap.round
+        ..color = const Color(0xFFE8E0D0);
+      final lh = Path()
+        ..moveTo(cx - r * 0.6, cy - r * 0.5)
+        ..quadraticBezierTo(cx - r * 1.5, cy - r * 1.0, cx - r * 1.3, cy - r * 1.6);
+      final rh = Path()
+        ..moveTo(cx + r * 0.6, cy - r * 0.5)
+        ..quadraticBezierTo(cx + r * 1.5, cy - r * 1.0, cx + r * 1.3, cy - r * 1.6);
+      canvas.drawPath(lh, hp);
+      canvas.drawPath(rh, hp);
+    } else {
+      // 백호 — 둥근 삼각 귀
+      final ears = Path()
+        ..moveTo(cx - r * 0.85, cy - r * 0.45)
+        ..lineTo(cx - r * 0.45, cy - r * 1.2 - earTwitch)
+        ..lineTo(cx - r * 0.05, cy - r * 0.6)
+        ..close()
+        ..moveTo(cx + r * 0.85, cy - r * 0.45)
+        ..lineTo(cx + r * 0.45, cy - r * 1.2 + earTwitch)
+        ..lineTo(cx + r * 0.05, cy - r * 0.6)
+        ..close();
+      canvas.drawPath(ears, earPaint);
+    }
+
+    // 얼굴 (squash 타원) — 발광 코어 + 밝은 림
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy), width: fw * 1.7, height: fh * 1.7),
+        Paint()..color = col.withOpacity(0.18));
+    canvas.drawOval(Rect.fromCenter(center: Offset(cx, cy), width: fw, height: fh),
+        Paint()..color = col);
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy), width: fw, height: fh),
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2
           ..color = Colors.white.withOpacity(0.85));
-    // 줄무늬
-    final st = Paint()
-      ..color = const Color(0xFF3A2606)
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(Offset(w.px - w.pr * 0.5, w.py - w.pr * 0.55),
-        Offset(w.px - w.pr * 0.2, w.py - w.pr * 0.2), st);
-    canvas.drawLine(Offset(w.px + w.pr * 0.5, w.py - w.pr * 0.55),
-        Offset(w.px + w.pr * 0.2, w.py - w.pr * 0.2), st);
-    // 눈
-    final eye = Paint()..color = const Color(0xFF1A1208);
-    canvas.drawCircle(Offset(w.px - w.pr * 0.36, w.py - w.pr * 0.05), w.pr * 0.17, eye);
-    canvas.drawCircle(Offset(w.px + w.pr * 0.36, w.py - w.pr * 0.05), w.pr * 0.17, eye);
+
+    // 무늬 (백호=줄, 흑표=점)
+    if (id == 0) {
+      final st = Paint()
+        ..color = const Color(0xFF3A2606)
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(Offset(cx - r * 0.5, cy - r * 0.5), Offset(cx - r * 0.22, cy - r * 0.2), st);
+      canvas.drawLine(Offset(cx + r * 0.5, cy - r * 0.5), Offset(cx + r * 0.22, cy - r * 0.2), st);
+    } else if (id == 1) {
+      final sp = Paint()..color = Colors.black.withOpacity(0.25);
+      canvas.drawCircle(Offset(cx - r * 0.45, cy - r * 0.35), r * 0.1, sp);
+      canvas.drawCircle(Offset(cx + r * 0.45, cy - r * 0.35), r * 0.1, sp);
+    }
+
+    // 볼터치(귀여움)
+    final blush = Paint()..color = const Color(0xFFFF8E8E).withOpacity(0.5);
+    canvas.drawCircle(Offset(cx - r * 0.55, cy + r * 0.28), r * 0.16, blush);
+    canvas.drawCircle(Offset(cx + r * 0.55, cy + r * 0.28), r * 0.16, blush);
+
+    // 눈 (주기적 깜빡임) + 큰 눈망울 + 하이라이트
+    final blink = (t % 3.1) < 0.13;
+    final ey = cy - r * 0.05;
+    final eL = Offset(cx - r * 0.38, ey), eR = Offset(cx + r * 0.38, ey);
+    final dark = Paint()..color = const Color(0xFF160F06);
+    if (blink) {
+      final lid = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4
+        ..strokeCap = StrokeCap.round
+        ..color = dark.color;
+      canvas.drawLine(eL.translate(-r * 0.18, 0), eL.translate(r * 0.18, 0), lid);
+      canvas.drawLine(eR.translate(-r * 0.18, 0), eR.translate(r * 0.18, 0), lid);
+    } else {
+      canvas.drawCircle(eL, r * 0.2, dark);
+      canvas.drawCircle(eR, r * 0.2, dark);
+      final hi = Paint()..color = Colors.white.withOpacity(0.9);
+      canvas.drawCircle(eL.translate(-r * 0.06, -r * 0.07), r * 0.07, hi);
+      canvas.drawCircle(eR.translate(-r * 0.06, -r * 0.07), r * 0.07, hi);
+    }
+    // 코
+    canvas.drawCircle(Offset(cx, cy + r * 0.32), r * 0.1, dark);
   }
 
   @override
