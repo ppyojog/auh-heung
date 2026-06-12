@@ -88,6 +88,15 @@ class Pulse {
         maxLife = life;
 }
 
+class FloatText {
+  double x, y, life, maxLife, size;
+  final String text;
+  final Color color;
+  FloatText(this.x, this.y, this.text, this.color, this.size)
+      : life = 0.7,
+        maxLife = 0.7;
+}
+
 class Upgrade {
   final String icon, title, desc;
   final VoidCallback apply;
@@ -132,7 +141,18 @@ class World {
   final List<Orb> orbs = [];
   final List<Particle> parts = [];
   final List<Pulse> pulses = [];
+  final List<FloatText> floats = []; // 데미지 숫자 등
+  double shake = 0; // 화면 흔들림 강도
   int _eid = 0;
+
+  void _shakeAdd(double v) {
+    if (v > shake) shake = v;
+  }
+
+  void _float(double x, double y, String t, Color c, double size) {
+    if (floats.length > 46) floats.removeAt(0);
+    floats.add(FloatText(x, y, t, c, size));
+  }
 
   // 조이스틱
   bool jActive = false;
@@ -180,6 +200,8 @@ class World {
     orbs.clear();
     parts.clear();
     pulses.clear();
+    floats.clear();
+    shake = 0;
     px = w / 2;
     py = h / 2;
     hp = maxHp;
@@ -261,6 +283,7 @@ class World {
       level += 1;
       xpNext = (xpNext * 1.34 + 2).roundToDouble();
       _hapticBig = true;
+      _shakeAdd(9);
       pulses.add(Pulse(px, py, 120, 0.5, P.gold));
       _openLevelUp();
     }
@@ -277,10 +300,10 @@ class World {
     if (spawnT > 0) return;
     final interval = max(0.32, 1.5 - time * 0.012).toDouble();
     spawnT = interval;
-    if (enemies.length > 88) return;
-    final count = 1 + (time ~/ 40);
+    if (enemies.length > 120) return;
+    final count = 1 + (time ~/ 32);
     for (int i = 0; i < count; i++) {
-      if (enemies.length > 88) break;
+      if (enemies.length > 120) break;
       _spawnOne();
     }
   }
@@ -328,6 +351,7 @@ class World {
     final base = 240 + time * 6;
     enemies.add(Enemy(_eid++, x.clamp(0.0, w), y.clamp(0.0, h), base, base, 40, 22 + time * 0.08, 30, EType.boss));
     pulses.add(Pulse(px, py, 200, 0.6, P.blood));
+    _shakeAdd(12);
     _hapticBig = true;
   }
 
@@ -384,6 +408,7 @@ class World {
           }
         }
         pulses.add(Pulse(px, py, radius, 0.45, P.gold));
+        _shakeAdd(5);
       }
     }
     // 회전 송곳니 (지속 접촉) — _collide에서 처리
@@ -426,6 +451,7 @@ class World {
         final rr = (b.radius + e.radius);
         if ((b.x - e.x) * (b.x - e.x) + (b.y - e.y) * (b.y - e.y) <= rr * rr) {
           _hurt(e, b.dmg);
+          _float(e.x, e.y - e.radius - 4, b.dmg.round().toString(), P.goldSoft, 13);
           b.hitIds.add(e.id);
           if (b.pierce <= 0) {
             b.dead = true;
@@ -466,6 +492,7 @@ class World {
         hp -= e.dmg * dt;
         contactCdView = 0.12;
         _hapticHit = true;
+        _shakeAdd(3);
       }
     }
 
@@ -474,6 +501,11 @@ class World {
       if (e.hp <= 0 && !e.dead) {
         e.dead = true;
         kills += 1;
+        if (e.type == EType.boss) {
+          _float(e.x, e.y - e.radius, 'BOSS 격파!', P.gold, 18);
+          _shakeAdd(10);
+          _hapticBig = true;
+        }
         final drops = e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1);
         for (int i = 0; i < drops; i++) {
           orbs.add(Orb(e.x + (rng.nextDouble() - 0.5) * 24, e.y + (rng.nextDouble() - 0.5) * 24,
@@ -532,6 +564,12 @@ class World {
       p.r = p.maxR * (1 - (p.life / p.maxLife));
     }
     pulses.removeWhere((p) => p.life <= 0);
+    for (final f in floats) {
+      f.y -= 38 * dt;
+      f.life -= dt;
+    }
+    floats.removeWhere((f) => f.life <= 0);
+    if (shake > 0) shake = max(0, shake - dt * 26);
   }
 
   // ── 레벨업 강화 ──
@@ -891,42 +929,62 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 }
 
 // =============================================================================
-//  월드 페인터 — 모든 그래픽을 코드로
+//  월드 페인터 — 네온 벡터 (어두운 배경 + 발광 레이어). 전부 코드 생성.
 // =============================================================================
 class WorldPainter extends CustomPainter {
   final World w;
   WorldPainter(this.w);
 
+  // 발광 점: 큰 후광 → 작은 후광 → 밝은 코어 (HTML 렌더러 호환, maskFilter 미사용)
+  void _glow(Canvas c, double x, double y, double r, Color col, {double core = 1.0}) {
+    c.drawCircle(Offset(x, y), r * 2.6, Paint()..color = col.withOpacity(0.09));
+    c.drawCircle(Offset(x, y), r * 1.6, Paint()..color = col.withOpacity(0.18));
+    c.drawCircle(Offset(x, y), r, Paint()..color = col.withOpacity(core));
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
-    // 배경
+    // 배경(흔들림 영향 X)
     final bg = Paint()
       ..shader = const RadialGradient(
-        colors: [Color(0xFF1B140D), Color(0xFF0A0807)],
-        radius: 0.95,
+        colors: [Color(0xFF15110C), Color(0xFF070605)],
+        radius: 1.0,
       ).createShader(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, bg);
     _grid(canvas, size);
 
     if (w.phase == GPhase.title) return;
 
-    // 마나 구슬
-    final orbP = Paint();
-    for (final o in w.orbs) {
-      orbP.color = P.cyan.withOpacity(0.9);
-      canvas.drawCircle(Offset(o.x, o.y), 3.2, orbP);
-      orbP.color = P.cyan.withOpacity(0.25);
-      canvas.drawCircle(Offset(o.x, o.y), 6.5, orbP);
+    // 화면 흔들림 — 내용물만
+    canvas.save();
+    if (w.shake > 0.2) {
+      final dx = sin(w.time * 91.0) * w.shake;
+      final dy = cos(w.time * 73.0) * w.shake;
+      canvas.translate(dx, dy);
     }
 
-    // 포효/펄스
+    // 마나 구슬
+    for (final o in w.orbs) {
+      _glow(canvas, o.x, o.y, 3.0, P.cyan, core: 0.95);
+    }
+
+    // 포효/펄스 (발광 링)
     for (final p in w.pulses) {
       final a = (p.life / p.maxLife).clamp(0.0, 1.0);
-      final ring = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3 + 4 * a
-        ..color = p.color.withOpacity(0.5 * a);
-      canvas.drawCircle(Offset(p.x, p.y), p.r, ring);
+      canvas.drawCircle(
+          Offset(p.x, p.y),
+          p.r,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 7 * a + 2
+            ..color = p.color.withOpacity(0.18 * a));
+      canvas.drawCircle(
+          Offset(p.x, p.y),
+          p.r,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.5
+            ..color = p.color.withOpacity(0.6 * a));
     }
 
     // 적
@@ -934,52 +992,76 @@ class WorldPainter extends CustomPainter {
       _enemy(canvas, e);
     }
 
-    // 투사체 (발톱)
-    final bp = Paint()..color = P.goldSoft;
+    // 투사체 (발톱) — 진행 방향 잔상 + 발광
     for (final b in w.bullets) {
-      canvas.drawCircle(Offset(b.x, b.y), b.radius * 0.6, bp);
-      final glow = Paint()..color = P.gold.withOpacity(0.3);
-      canvas.drawCircle(Offset(b.x, b.y), b.radius, glow);
+      canvas.drawLine(
+          Offset(b.x - b.vx * 0.028, b.y - b.vy * 0.028),
+          Offset(b.x, b.y),
+          Paint()
+            ..strokeWidth = 3
+            ..strokeCap = StrokeCap.round
+            ..color = P.gold.withOpacity(0.4));
+      _glow(canvas, b.x, b.y, b.radius * 0.7, P.goldSoft);
     }
 
     // 회전 송곳니
     if (w.fangLv > 0) {
       final orad = 60 + w.fangLv * 4.0;
-      final fp = Paint()..color = Colors.white;
       for (int i = 0; i < w.fangLv; i++) {
         final a = w.orbitAngle + i * 6.2831853 / w.fangLv;
-        final fx = w.px + cos(a) * orad;
-        final fy = w.py + sin(a) * orad;
-        canvas.drawCircle(Offset(fx, fy), 6, fp);
-        canvas.drawCircle(Offset(fx, fy), 11, Paint()..color = Colors.white.withOpacity(0.22));
+        _glow(canvas, w.px + cos(a) * orad, w.py + sin(a) * orad, 6.0, P.cyan, core: 0.95);
       }
     }
 
-    // 파티클
+    // 파티클 (발광 스파크)
     for (final pt in w.parts) {
       final a = (pt.life / pt.maxLife).clamp(0.0, 1.0);
-      canvas.drawCircle(Offset(pt.x, pt.y), pt.size * a, Paint()..color = pt.color.withOpacity(a));
+      canvas.drawCircle(Offset(pt.x, pt.y), pt.size * a + 0.5,
+          Paint()..color = pt.color.withOpacity(a));
+      canvas.drawCircle(Offset(pt.x, pt.y), (pt.size * a + 0.5) * 2,
+          Paint()..color = pt.color.withOpacity(a * 0.25));
     }
 
-    // 플레이어 (백호)
+    // 플레이어 (백호 — 네온 골드)
     _player(canvas);
 
-    // 조이스틱
+    // 데미지 숫자
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+    for (final f in w.floats) {
+      final a = (f.life / f.maxLife).clamp(0.0, 1.0);
+      tp.text = TextSpan(
+        text: f.text,
+        style: TextStyle(
+          color: f.color.withOpacity(a),
+          fontSize: f.size,
+          fontWeight: FontWeight.bold,
+          shadows: const [Shadow(color: Colors.black, blurRadius: 2)],
+        ),
+      );
+      tp.layout();
+      tp.paint(canvas, Offset(f.x - tp.width / 2, f.y - tp.height / 2));
+    }
+
+    canvas.restore();
+
+    // 조이스틱 (흔들림 영향 X — UI 성격)
     if (w.jActive) {
-      final base = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..color = Colors.white.withOpacity(0.18);
-      canvas.drawCircle(Offset(w.jbx, w.jby), 52, base);
-      canvas.drawCircle(Offset(w.jkx, w.jky), 22, Paint()..color = Colors.white.withOpacity(0.28));
+      canvas.drawCircle(
+          Offset(w.jbx, w.jby),
+          52,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3
+            ..color = Colors.white.withOpacity(0.16));
+      canvas.drawCircle(Offset(w.jkx, w.jky), 22, Paint()..color = P.gold.withOpacity(0.30));
     }
   }
 
   void _grid(Canvas canvas, Size size) {
     final g = Paint()
-      ..color = Colors.white.withOpacity(0.03)
+      ..color = P.gold.withOpacity(0.025)
       ..strokeWidth = 1;
-    const step = 46.0;
+    const step = 48.0;
     for (double x = 0; x < size.width; x += step) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), g);
     }
@@ -995,54 +1077,54 @@ class WorldPainter extends CustomPainter {
         base = P.purple;
         break;
       case EType.tank:
-        base = P.blood;
+        base = P.red;
         break;
       case EType.boss:
-        base = const Color(0xFFE03020);
+        base = const Color(0xFFFF4533);
         break;
       case EType.grunt:
-        base = const Color(0xFF6B5E54);
+        base = const Color(0xFF8A9BB0);
         break;
     }
-    // 그림자 본체
-    canvas.drawCircle(Offset(e.x, e.y), e.radius,
-        Paint()..color = const Color(0xFF0C0A08).withOpacity(0.9));
-    canvas.drawCircle(Offset(e.x, e.y), e.radius,
+    // 어두운 코어 + 네온 후광/링 (플레이어보다 어둡게 → 대비로 가독성)
+    canvas.drawCircle(Offset(e.x, e.y), e.radius * 1.7, Paint()..color = base.withOpacity(0.10));
+    canvas.drawCircle(Offset(e.x, e.y), e.radius, Paint()..color = const Color(0xFF0E0A08));
+    canvas.drawCircle(
+        Offset(e.x, e.y),
+        e.radius,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.2
-          ..color = base);
-    // 붉은 눈
+          ..strokeWidth = 2.4
+          ..color = base.withOpacity(0.95));
+    // 밝은 눈
     final eye = Paint()..color = base;
-    canvas.drawCircle(Offset(e.x - e.radius * 0.32, e.y - e.radius * 0.1), e.radius * 0.16, eye);
-    canvas.drawCircle(Offset(e.x + e.radius * 0.32, e.y - e.radius * 0.1), e.radius * 0.16, eye);
+    canvas.drawCircle(Offset(e.x - e.radius * 0.34, e.y - e.radius * 0.08), e.radius * 0.17, eye);
+    canvas.drawCircle(Offset(e.x + e.radius * 0.34, e.y - e.radius * 0.08), e.radius * 0.17, eye);
     // 피격 섬광
     if (e.flash > 0) {
       canvas.drawCircle(Offset(e.x, e.y), e.radius,
-          Paint()..color = Colors.white.withOpacity(0.55 * e.flash.clamp(0.0, 1.0)));
+          Paint()..color = Colors.white.withOpacity(0.6 * e.flash.clamp(0.0, 1.0)));
     }
     // 보스 체력 링
     if (e.type == EType.boss) {
       final frac = (e.hp / e.maxHp).clamp(0.0, 1.0);
       canvas.drawArc(
-          Rect.fromCircle(center: Offset(e.x, e.y), radius: e.radius + 5),
+          Rect.fromCircle(center: Offset(e.x, e.y), radius: e.radius + 6),
           -1.5708,
           6.2831853 * frac,
           false,
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 3
-            ..color = P.red);
+            ..strokeWidth = 3.5
+            ..color = P.gold);
     }
   }
 
   void _player(Canvas canvas) {
     final hurt = w.contactCdView > 0;
-    final body = Paint()
-      ..color = hurt ? P.red : P.gold;
-    // 안광
-    canvas.drawCircle(Offset(w.px, w.py), w.pr * 2.2,
-        Paint()..color = P.gold.withOpacity(0.18));
+    final col = hurt ? P.red : P.gold;
+    // 넓은 안광
+    canvas.drawCircle(Offset(w.px, w.py), w.pr * 3.0, Paint()..color = col.withOpacity(0.12));
     // 귀
     final ear = Path()
       ..moveTo(w.px - w.pr * 0.9, w.py - w.pr * 0.5)
@@ -1053,15 +1135,29 @@ class WorldPainter extends CustomPainter {
       ..lineTo(w.px + w.pr * 0.4, w.py - w.pr * 1.25)
       ..lineTo(w.px + w.pr * 0.1, w.py - w.pr * 0.6)
       ..close();
-    canvas.drawPath(ear, body);
-    // 얼굴
-    canvas.drawCircle(Offset(w.px, w.py), w.pr, body);
+    canvas.drawPath(ear, Paint()..color = col);
+    // 얼굴 (코어 + 밝은 림)
+    _glow(canvas, w.px, w.py, w.pr, col, core: 1.0);
+    canvas.drawCircle(
+        Offset(w.px, w.py),
+        w.pr,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = Colors.white.withOpacity(0.85));
+    // 줄무늬
+    final st = Paint()
+      ..color = const Color(0xFF3A2606)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(w.px - w.pr * 0.5, w.py - w.pr * 0.55),
+        Offset(w.px - w.pr * 0.2, w.py - w.pr * 0.2), st);
+    canvas.drawLine(Offset(w.px + w.pr * 0.5, w.py - w.pr * 0.55),
+        Offset(w.px + w.pr * 0.2, w.py - w.pr * 0.2), st);
     // 눈
     final eye = Paint()..color = const Color(0xFF1A1208);
-    canvas.drawCircle(Offset(w.px - w.pr * 0.38, w.py - w.pr * 0.05), w.pr * 0.18, eye);
-    canvas.drawCircle(Offset(w.px + w.pr * 0.38, w.py - w.pr * 0.05), w.pr * 0.18, eye);
-    // 코
-    canvas.drawCircle(Offset(w.px, w.py + w.pr * 0.35), w.pr * 0.13, eye);
+    canvas.drawCircle(Offset(w.px - w.pr * 0.36, w.py - w.pr * 0.05), w.pr * 0.17, eye);
+    canvas.drawCircle(Offset(w.px + w.pr * 0.36, w.py - w.pr * 0.05), w.pr * 0.17, eye);
   }
 
   @override
