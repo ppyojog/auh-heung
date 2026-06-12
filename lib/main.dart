@@ -275,8 +275,8 @@ class World {
 
   // 플레이어
   double px = 0, py = 0;
-  double hp = 100, baseMaxHp = 100;
-  double baseSpeed = 132;
+  double hp = 120, baseMaxHp = 120;
+  double baseSpeed = 138;
   double pr = 11; // 반지름
   int level = 1;
   double xp = 0, xpNext = 5;
@@ -338,7 +338,7 @@ class World {
   // ── 파생 스탯 (캐릭터 배수 반영) ──
   double get maxHp => (baseMaxHp + 25 * hideLv) * charHp;
   double get speed => baseSpeed * (1 + 0.10 * windLv) * charSpeed;
-  double get pickupRange => 46 + 16.0 * hungerLv;
+  double get pickupRange => 58 + 16.0 * hungerLv;
   double get dmgMult => (1 + 0.12 * wildLv) * charDmg;
   double get fireMult => 1 + 0.10 * rageLv;
 
@@ -351,7 +351,7 @@ class World {
     kills = 0;
     level = 1;
     xp = 0;
-    xpNext = 5;
+    xpNext = 4;
     // 캐릭터 적용
     final ch = kChars[charIndex.clamp(0, kChars.length - 1)];
     charDmg = ch.dmg;
@@ -368,7 +368,7 @@ class World {
     roarT = 0;
     boltT = 0;
     spikeT = 0;
-    spawnT = 0.6;
+    spawnT = 1.4; // 첫 몇 초 숨 돌릴 여유
     bossT = 90;
     orbitAngle = 0;
     enemies.clear();
@@ -458,7 +458,7 @@ class World {
     if (xp >= xpNext) {
       xp -= xpNext;
       level += 1;
-      xpNext = (xpNext * 1.34 + 2).roundToDouble();
+      xpNext = (xpNext * 1.26 + 2).roundToDouble();
       _hapticBig = true;
       _shakeAdd(9);
       sfx.play('level');
@@ -476,10 +476,10 @@ class World {
     }
     spawnT -= dt;
     if (spawnT > 0) return;
-    final interval = max(0.32, 1.5 - time * 0.012).toDouble();
+    final interval = max(0.5, 2.0 - time * 0.011).toDouble();
     spawnT = interval;
     if (enemies.length > 120) return;
-    final count = 1 + (time ~/ 32);
+    final count = 1 + (time ~/ 48);
     for (int i = 0; i < count; i++) {
       if (enemies.length > 120) break;
       _spawnOne();
@@ -503,22 +503,22 @@ class World {
       x = w + 20;
       y = rng.nextDouble() * h;
     }
-    // 타입 결정 (시간에 따라 흉포해짐)
+    // 타입 결정 (시간에 따라 흉포해짐) — 초반은 잡몹만, 점진적으로 강적 등장
     EType t = EType.grunt;
     final roll = rng.nextDouble();
-    if (time > 60 && roll < 0.16) {
+    if (time > 78 && roll < 0.13) {
       t = EType.tank;
-    } else if (time > 30 && roll < 0.42) {
+    } else if (time > 42 && roll < 0.32) {
       t = EType.fast;
     }
-    final base = 12 + time * 0.85;
+    final base = 9 + time * 0.5;
     Enemy e;
     if (t == EType.fast) {
-      e = Enemy(_eid++, x, y, base * 0.7, base * 0.7, 78 + time * 0.22, 7 + time * 0.04, 9, t);
+      e = Enemy(_eid++, x, y, base * 0.65, base * 0.65, 72 + time * 0.17, 4 + time * 0.03, 9, t);
     } else if (t == EType.tank) {
-      e = Enemy(_eid++, x, y, base * 3.4, base * 3.4, 34 + time * 0.08, 12 + time * 0.06, 18, t);
+      e = Enemy(_eid++, x, y, base * 3.0, base * 3.0, 30 + time * 0.05, 8.5 + time * 0.05, 18, t);
     } else {
-      e = Enemy(_eid++, x, y, base, base, 50 + time * 0.16, 7 + time * 0.05, 11, t);
+      e = Enemy(_eid++, x, y, base, base, 44 + time * 0.12, 4.5 + time * 0.03, 11, t);
     }
     enemies.add(e);
   }
@@ -553,10 +553,10 @@ class World {
     if (clawLv > 0) {
       clawT -= dt;
       if (clawT <= 0) {
-      clawT = ((clawEvo ? 0.55 : 1.0 * pow(0.9, clawLv - 1)) / fireMult).toDouble();
+      clawT = ((clawEvo ? 0.5 : 0.8 * pow(0.9, clawLv - 1)) / fireMult).toDouble();
       final target = _nearest();
       if ((target != null || clawEvo) && bullets.length < 320) {
-        final dmg = (7 + clawLv * 4) * dmgMult * (clawEvo ? 1.7 : 1.0);
+        final dmg = (9 + clawLv * 4) * dmgMult * (clawEvo ? 1.7 : 1.0);
         final pierce = clawEvo ? 3 : (clawLv >= 5 ? 1 : 0);
         if (clawEvo) {
           for (int i = 0; i < 16; i++) {
