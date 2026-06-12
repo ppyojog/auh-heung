@@ -291,7 +291,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, choice, dead, shop, menu }
+enum GPhase { title, playing, levelup, choice, dead, shop, menu, achieve }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -308,6 +308,24 @@ const List<MetaUp> kMeta = [
   MetaUp('spd', '🌬', '바람의 다리', '시작 이동속도 +4%', 30, 6),
   MetaUp('pick', '🧲', '굶주린 코', '수집 범위 +8', 25, 6),
   MetaUp('gain', '🦷', '전리품 사냥꾼', '송곳니 획득 +12%', 40, 8),
+];
+
+// 업적 — 달성 시 송곳니 보상 + 영구 기록(리텐션·목표)
+class Ach {
+  final String id, icon, name, desc;
+  final int reward;
+  const Ach(this.id, this.icon, this.name, this.desc, this.reward);
+}
+
+const List<Ach> kAch = [
+  Ach('kill10', '🩸', '첫 사냥', '적 10마리 처치', 10),
+  Ach('surv60', '⏳', '한 숨 돌리다', '1분 생존', 15),
+  Ach('lv10', '⭐', '성장하는 맹수', '레벨 10 도달', 20),
+  Ach('stage5', '🌊', '거센 파도', '스테이지 5 도달', 25),
+  Ach('kill100', '💀', '학살자', '한 판 100킬', 25),
+  Ach('boss1', '👹', '거수 사냥꾼', '보스 처치', 30),
+  Ach('dev200', '🍖', '대식가', '한 판 200 포식', 30),
+  Ach('surv180', '🏆', '살아있는 전설', '3분 생존', 40),
 ];
 
 // 타이니 선택 대화 — 난이도를 가르는 분기 (선택권은 주되 욕망으로 망할 수 있는 구조)
@@ -341,6 +359,13 @@ class World {
   double rage = 0, rageMax = 75, berserkT = 0;
   // 펫 타이니 — 플레이어를 졸졸 따라다니며 표정으로 반응
   double petX = 0, petY = 0, petHappyT = 0;
+  // 포식(Devour) — 삼킬수록 회복 + 호랑이가 점점 커짐 (양→호랑이 USP)
+  int devour = 0;
+  double get growScale => (0.9 + devour * 0.005).clamp(0.9, 1.6);
+  // 업적
+  final Set<String> achieved = {};
+  final List<String> pendingAch = []; // 이번 사망에서 새로 달성한 것
+  int runBoss = 0; // 이번 런 보스 처치 수
   // 충신 herald (텍스트 대사 + 표정으로 톤 전달)
   String heraldLine = '';
   String heraldFace = '🐯';
@@ -564,6 +589,9 @@ class World {
     petX = px - 20;
     petY = py - 22;
     petHappyT = 0;
+    devour = 0;
+    runBoss = 0;
+    pendingAch.clear();
     heraldLine = '';
     heraldT = 0;
     _heraldCd = 0;
@@ -1048,8 +1076,18 @@ class World {
         e.dead = true;
         kills += 1;
         petHappyT = 1.0; // 펫이 기뻐함
+        // [포식] 삼켜서 회복 + 성장
+        devour += 1;
+        final heal = e.type == EType.boss
+            ? 12.0
+            : (e.type == EType.tank ? 2.5 : (e.type == EType.fast ? 0.4 : 0.6));
+        if (hp < maxHp) {
+          hp = min(maxHp, hp + heal);
+          if (heal >= 2.5) _float(e.x, e.y - e.radius, '+${heal.round()}♥', P.green, 13);
+        }
         rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)) * diff);
         if (e.type == EType.boss) {
+          runBoss += 1;
           _float(e.x, e.y - e.radius, 'BOSS 격파!', P.gold, 18);
           _say(_pick(Tiny.boss), force: true, face: '😼');
           _shakeAdd(10);
@@ -1200,8 +1238,29 @@ class World {
     // 전리품 적립 — 죽음이 헛되지 않게(플레이한 만큼 보상)
     runFangs = ((kills + time.floor() + level * 8) * (1 + 0.12 * metaLv('gain'))).round();
     fangs += runFangs;
+    _evalAchievements();
     _saveRecords();
     _saveMeta();
+  }
+
+  void _grantAch(String id, int reward) {
+    if (achieved.contains(id)) return;
+    achieved.add(id);
+    fangs += reward;
+    runFangs += reward;
+    pendingAch.add(id);
+  }
+
+  void _evalAchievements() {
+    pendingAch.clear();
+    if (kills >= 10) _grantAch('kill10', 10);
+    if (time >= 60) _grantAch('surv60', 15);
+    if (level >= 10) _grantAch('lv10', 20);
+    if (stage >= 5) _grantAch('stage5', 25);
+    if (kills >= 100) _grantAch('kill100', 25);
+    if (runBoss >= 1) _grantAch('boss1', 30);
+    if (devour >= 200) _grantAch('dev200', 30);
+    if (time >= 180) _grantAch('surv180', 40);
   }
 
   // ── 세이브 슬롯 (3개) — 슬롯별 송곳니·강화·기록 분리 저장 ──
@@ -1216,6 +1275,7 @@ class World {
     } catch (_) {}
     fangs = 0;
     meta.clear();
+    achieved.clear();
     bestTime = 0;
     bestKills = 0;
     _loadRecords();
@@ -1246,12 +1306,14 @@ class World {
       fangs = j['fangs'] as int? ?? 0;
       final m = (j['up'] as Map?) ?? {};
       m.forEach((k, v) => meta[k as String] = v as int);
+      achieved.addAll(((j['ach'] as List?) ?? []).map((e) => e as String));
     } catch (_) {}
   }
 
   void _saveMeta() {
     try {
-      html.window.localStorage[_metaKey] = jsonEncode({'fangs': fangs, 'up': meta});
+      html.window.localStorage[_metaKey] =
+          jsonEncode({'fangs': fangs, 'up': meta, 'ach': achieved.toList()});
     } catch (_) {}
   }
 
@@ -1357,6 +1419,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.playing && world.heraldT > 0) _heraldBubble(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.shop) _shopOverlay(),
+            if (world.phase == GPhase.achieve) _achieveOverlay(),
             if (world.phase == GPhase.menu) _menuOverlay(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.choice && world.tinyChoice != null) _choiceOverlay(),
@@ -1763,6 +1826,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 world.shopReturn = GPhase.title;
                 world.phase = GPhase.shop;
               }), dark: false),
+          const SizedBox(height: 10),
+          _bigBtn('🏆  업적  (${world.achieved.length}/${kAch.length})', P.panel,
+              () => setState(() => world.phase = GPhase.achieve),
+              dark: false),
           const SizedBox(height: 16),
         ]),
       ),
@@ -1854,6 +1921,67 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
             child: _bigBtn('← 돌아가기', P.panel,
                 () => setState(() => world.phase = world.shopReturn),
+                dark: false),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // ── 업적 ──
+  Widget _achieveOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.82),
+      child: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
+            child: Row(children: [
+              const Text('🏆 업적',
+                  style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              Text('${world.achieved.length} / ${kAch.length}',
+                  style: const TextStyle(color: P.goldSoft, fontSize: 15, fontWeight: FontWeight.bold)),
+            ]),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+              children: kAch.map((a) {
+                final got = world.achieved.contains(a.id);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 9),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: got ? P.gold.withOpacity(0.12) : P.panel,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: got ? P.gold.withOpacity(0.7) : P.line),
+                    ),
+                    child: Row(children: [
+                      Opacity(opacity: got ? 1 : 0.4, child: Text(a.icon, style: const TextStyle(fontSize: 24))),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(got ? a.name : '???',
+                              style: TextStyle(
+                                  color: got ? P.parch : P.muted, fontSize: 14, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 2),
+                          Text(a.desc, style: const TextStyle(color: P.muted, fontSize: 11.5)),
+                        ]),
+                      ),
+                      Text(got ? '✓' : '🦷${a.reward}',
+                          style: TextStyle(
+                              color: got ? P.green : P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
+                    ]),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+            child: _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = GPhase.title),
                 dark: false),
           ),
         ]),
@@ -2024,6 +2152,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   style: const TextStyle(
                       color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
             ),
+            if (world.pendingAch.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('🏆 새 업적 ${world.pendingAch.length}개 달성!',
+                  style: const TextStyle(color: P.green, fontSize: 13, fontWeight: FontWeight.bold)),
+            ],
           ]),
         ),
         const SizedBox(height: 20),
@@ -2301,7 +2434,7 @@ class WorldPainter extends CustomPainter {
     final id = w.charIndex.clamp(0, kChars.length - 1);
     final ch = kChars[id];
     final col = hurt ? P.red : ch.color;
-    final r = w.pr;
+    final r = w.pr * w.growScale; // 포식할수록 시각적으로 커짐(히트박스는 w.pr 유지)
     final t = w.time;
     final moving = w.dirx != 0 || w.diry != 0;
     // 통통 튀는 숨쉬기/걸음 + squash&stretch
