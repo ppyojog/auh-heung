@@ -306,6 +306,17 @@ const Map<String, Relic> kRelics = {
   'crown': Relic('crown', '약탈왕의 관', '👑', RelicFx.cGold, 0.08, 'C형(매복) 성공 보상 +8%'),
   'tusk': Relic('tusk', '거대한 엄니', '🦣', RelicFx.huntGold, 0.15, '사냥 보상 +15%'),
   'ash': Relic('ash', '잿더미의 맹세', '🔥', RelicFx.income, 1000, '매 턴 시작 시 금고 +1,000'),
+  // ── 신규 유물 확장 (기존 RelicFx 재사용 — 합산·드롭풀·도감 자동 반영) ──
+  'gale': Relic('gale', '질풍의 발굽', '🌪', RelicFx.dice, 1, '모든 판정 +1'),
+  'bloodmoon': Relic('bloodmoon', '핏빛 보름달', '🌕', RelicFx.streak, 0.06, '연승 보너스 +6%p 가중'),
+  'glutton': Relic('glutton', '탐식의 위장', '🍖', RelicFx.huntGold, 0.30, '사냥 보상 +30%'),
+  'warpaint': Relic('warpaint', '전쟁의 핏자국', '🩸', RelicFx.cGold, 0.20, 'C형(매복) 성공 보상 +20%'),
+  'oldbone': Relic('oldbone', '늙은 무당의 뼈', '🦴', RelicFx.upkeep, 0.12, '매 턴 유지비 -12%'),
+  'thunder': Relic('thunder', '천둥의 어금니', '⚡', RelicFx.jackpot, 0.12, '잭팟 확률 +12%p'),
+  'phoenix': Relic('phoenix', '불사조의 깃털', '🪶', RelicFx.comeback, 0.5, '오뚝이 컴백 보상 +50%'),
+  'hoard': Relic('hoard', '용의 보물더미', '💰', RelicFx.income, 2500, '매 턴 시작 시 금고 +2,500'),
+  'boulder': Relic('boulder', '바위심장', '🪨', RelicFx.minRoll, 1, '주사위 최소 눈금 +1 (상시)'),
+  'silktongue': Relic('silktongue', '비단 혓바닥', '👅', RelicFx.dice, 1, '모든 판정 +1'),
 };
 
 // =============================================================================
@@ -352,6 +363,19 @@ const List<ShopItem> kBlackMarket = [
   ShopItem('SHP_010', '신화 타이거 군주의 인장', 90000, 1, '야성 +4 · 영향력 +3 · 가죽 +3',
       equipment: Equipment('SHP_010', '신화 타이거 군주의 인장', Grade.mythic, EquipSlot.mythic,
           statBonus: {TribeStat.wildness: 4, TribeStat.influence: 3, TribeStat.leather: 3})),
+  // ── 신규 암시장 장비 확장 ──
+  ShopItem('SHP_011', '들소뿔 투구', 9000, 3, '가죽 +2 · 야성 +1',
+      equipment: Equipment('SHP_011', '들소뿔 투구', Grade.rare, EquipSlot.armor,
+          statBonus: {TribeStat.leather: 2, TribeStat.wildness: 1})),
+  ShopItem('SHP_012', '흑요석 단검', 18000, 2, '야성 +2 · 영향력 +1',
+      equipment: Equipment('SHP_012', '흑요석 단검', Grade.rare, EquipSlot.weapon,
+          statBonus: {TribeStat.wildness: 2, TribeStat.influence: 1})),
+  ShopItem('SHP_013', '예언자의 수정구', 26000, 2, '영향력 +4',
+      equipment: Equipment('SHP_013', '예언자의 수정구', Grade.ancient, EquipSlot.accessory,
+          statBonus: {TribeStat.influence: 4})),
+  ShopItem('SHP_014', '폭군의 어깨갑옷', 48000, 1, '가죽 +4 · 야성 +2',
+      equipment: Equipment('SHP_014', '폭군의 어깨갑옷', Grade.ancient, EquipSlot.armor,
+          statBonus: {TribeStat.leather: 4, TribeStat.wildness: 2})),
 ];
 
 // =============================================================================
@@ -401,6 +425,8 @@ const Map<String, Region> kRegions = {
         HuntTarget('숨어드는 살쾡이 도둑', TribeStat.influence, 13, 14000, 120, -2500),
         HuntTarget('계곡의 비단뱀', TribeStat.leather, 15, 20000, 180, -4500,
             statLose: {TribeStat.leather: -1}),
+        HuntTarget('황금 계곡의 꿀곰', TribeStat.leather, 14, 16000, 140, -3500),
+        HuntTarget('꿀송이 도둑 너구리떼', TribeStat.influence, 12, 11000, 90, -1800),
       ]),
   'plain': Region('plain', '무너지는 도미노 평원', '🏚️',
       [Color(0xFF2C2622), Color(0xFF14110F)], 2,
@@ -412,6 +438,9 @@ const Map<String, Region> kRegions = {
         HuntTarget('몰락한 부족 잔당', TribeStat.influence, 17, 30000, 280, -8000),
         HuntTarget('잿더미 도굴꾼 무리', TribeStat.wildness, 17, 28000, 250, -7500),
         HuntTarget('굶주린 평원 늑대왕', TribeStat.leather, 18, 34000, 300, -9000,
+            statLose: {TribeStat.wildness: -1}),
+        HuntTarget('도미노 평원의 시체매', TribeStat.influence, 18, 32000, 290, -8500),
+        HuntTarget('폐허를 뒤지는 들개 두목', TribeStat.wildness, 16, 27000, 250, -7200,
             statLose: {TribeStat.wildness: -1}),
       ]),
   'market': Region('market', '암시장 뒷골목', '🏪',
@@ -428,6 +457,10 @@ const Map<String, Region> kRegions = {
         HuntTarget('마력 폭주 골렘', TribeStat.leather, 20, 44000, 380, -12000,
             statLose: {TribeStat.leather: -2}),
         HuntTarget('첨탑의 그림자 암살자', TribeStat.influence, 21, 48000, 400, -13000),
+        HuntTarget('폭주한 마력 정령', TribeStat.wildness, 20, 46000, 390, -12500,
+            statLose: {TribeStat.wildness: -1}),
+        HuntTarget('첨탑 수호 강철 거인', TribeStat.leather, 22, 52000, 430, -14000,
+            statLose: {TribeStat.leather: -2}),
       ]),
   'throne': Region('throne', '그림자 의회 흑요석 왕좌', '🔥',
       [Color(0xFF3A0F0C), Color(0xFF160605)], 4,
@@ -444,6 +477,9 @@ const Map<String, Region> kRegions = {
         HuntTarget('투기장 광란의 무리', TribeStat.wildness, 18, 38000, 340, -11000),
         HuntTarget('전설의 백호 검투사', TribeStat.leather, 23, 70000, 600, -22000,
             statLose: {TribeStat.leather: -3}),
+        HuntTarget('투기장의 미친 코끼리', TribeStat.leather, 21, 60000, 520, -18000,
+            statLose: {TribeStat.leather: -2}),
+        HuntTarget('피에 굶주린 검투 쌍둥이', TribeStat.wildness, 22, 64000, 560, -20000),
       ]),
 };
 
@@ -470,6 +506,10 @@ const Map<String, TitleDef> kTitles = {
   'ACH_003': TitleDef('ACH_003', '흑요석 가도의 호랑이', '보이지 않는 손의 총아', '경계 점수 상시 +100 · (장착) B형 DC -3'),
   'ACH_004': TitleDef('ACH_004', '기생초', '대륙의 몰락자', '4등급 빚 조공 누적 가중 -5%'),
   'ACH_BOSS': TitleDef('ACH_BOSS', '대륙의 절대 포식자', '진 보스 격파', '의장 네오 맹수 격파의 증표'),
+  // ── 신규 업적(증표형 — 목표·수집 도파민) ──
+  'ACH_005': TitleDef('ACH_005', '광란의 연격', '멈추지 않는 사냥', '7연승을 일궈낸 광기의 증표'),
+  'ACH_006': TitleDef('ACH_006', '대륙의 보물 사냥꾼', '유물 수집가', '유물 10종을 그러모은 증표'),
+  'ACH_007': TitleDef('ACH_007', '백전의 노장', '대를 거듭한 부족장', '3대를 이어 일어선 핏줄의 증표'),
 };
 
 // =============================================================================
@@ -496,6 +536,11 @@ const List<NewsDef> kNews = [
       null, 0, '다음 2턴 모든 길의 요구치가 한결 수월해집니다'),
   NewsDef('NS_006', '겁먹은 부족들의 헌납 행렬', 5, '약한 부족들이 알아서 조공을 바칩니다',
       null, 0, '다음 2턴 판정이 유리하게 작동합니다'),
+  // ── 신규 호재 뉴스(respondStat null → 다음 2턴 길이 수월해지는 버프 자동 적용) ──
+  NewsDef('NS_007', '붉은 혜성이 대장님의 길을 비추다', 3, '하늘에 핏빛 혜성이 떠올라 길을 밝힙니다',
+      null, 0, '다음 2턴, 모든 길의 운명이 대장님 편에 섭니다'),
+  NewsDef('NS_008', '의회를 등진 첩자의 밀고', 4, '의회 내부의 배신자가 약점을 흘립니다',
+      null, 0, '다음 2턴, 적들의 빈틈이 훤히 보입니다'),
 ];
 
 // =============================================================================
@@ -1283,6 +1328,24 @@ class GameManager extends ChangeNotifier {
   // ── 다회차 유산(메타 성장) — 패배해도 다음 회차가 강해진다 ──
   int metaStatBonus = 0, metaGoldBonus = 0;
   String legacyNote = '';
+  // ── 영구 기록(리텐션) — 슬롯에 누적 저장 ──
+  int totalRuns = 0; // 시작한 회차 수
+  int bestTurn = 0; // 한 회차에서 버틴 최고 턴
+
+  // [메타] 이번 회차가 다음 세대에 물려줄 유산 — 성과(클리어·생존 턴·정복·사냥)에 비례.
+  //  "의미 있는 성장": 잘 싸운 회차일수록 다음 회차가 더 강해진다(단순 반복 grind 탈피).
+  int legacyStatEarn() {
+    final base = _state.cleared ? Cfg.legacyStatClear : Cfg.legacyStatLose;
+    final conquered = _state.completedEvents.length; // 격파한 사건 수
+    return base + conquered ~/ 4; // 사건 4개당 영구 스탯 +1 추가
+  }
+
+  int legacyGoldEarn() {
+    final base = _state.cleared ? Cfg.legacyGoldClear : Cfg.legacyGoldLose;
+    final turnBonus = _state.turn * 500; // 오래 버틸수록
+    final huntBonus = _state.huntWins * 800; // 많이 사냥할수록
+    return base + turnBonus + huntBonus;
+  }
 
   // ── 세이브 슬롯 (3슬롯) ──
   //  ※ 다른 폰/브라우저는 localStorage가 기기마다 독립이라 자동으로 따로 저장됨.
@@ -1328,6 +1391,8 @@ class GameManager extends ChangeNotifier {
         'pt': playthrough,
         'msb': metaStatBonus,
         'mgb': metaGoldBonus,
+        'runs': totalRuns,
+        'best': bestTurn,
         'boss': bossDone,
         'dom': domainShown,
       });
@@ -1343,6 +1408,8 @@ class GameManager extends ChangeNotifier {
     playthrough = 1;
     metaStatBonus = 0;
     metaGoldBonus = 0;
+    totalRuns = 0;
+    bestTurn = 0;
     legacyNote = '';
     bossDone = false;
     lastWasFail = false;
@@ -1368,6 +1435,8 @@ class GameManager extends ChangeNotifier {
       playthrough = (j['pt'] as int?) ?? 1;
       metaStatBonus = (j['msb'] as int?) ?? 0;
       metaGoldBonus = (j['mgb'] as int?) ?? 0;
+      totalRuns = (j['runs'] as int?) ?? 0;
+      bestTurn = (j['best'] as int?) ?? 0;
       bossDone = (j['boss'] as bool?) ?? false;
       domainShown = (j['dom'] as String?) ?? _state.domainStage;
       _overlay = Overlay.none;
@@ -1460,6 +1529,8 @@ class GameManager extends ChangeNotifier {
     flashes.add('🏺 유물 획득: ${r.emoji} ${r.name} — ${r.desc}');
     critBanner = true;
     screenShake = true;
+    shakeMag = 2;
+    bigWin = true;
     critText = '🏺[유물 발굴]🏺 ${r.emoji} ${r.name}을(를) 손에 넣었습니다! ${r.desc}';
     tinyLine = '대장님!! ${r.name}입니다!! 이 힘이 영원히 대장님과 함께합니다!!';
   }
@@ -1608,8 +1679,14 @@ class GameManager extends ChangeNotifier {
   void beginAdventure() {
     _state = _state.copyWith(currentRegion: 'valley');
     _setStory('SCR_001', keepTiny: false);
-    tinyLine = '대장님, 첫 사냥감이 코앞입니다! 남쪽 황금 계곡의 꿀송이를 통째로 '
-        '집어삼키시죠. 복잡한 건 전부 제게 맡기고 즐기기만 하십시오!';
+    // 2회차+: 물려받은 유산을 타이니가 핏빛으로 일러준다. 1회차: 평범한 첫 사냥 안내.
+    if (legacyNote.isNotEmpty) {
+      tinyLine = '크하핫… 또 일어나셨군요, 대장님. $legacyNote. '
+          '전대의 피가 발톱에 스몄습니다 — 이번엔 더 멀리 갑니다. 어흥!!';
+    } else {
+      tinyLine = '대장님, 첫 사냥감이 코앞입니다! 남쪽 황금 계곡의 꿀송이를 통째로 '
+          '집어삼키시죠. 복잡한 건 전부 제게 맡기고 즐기기만 하십시오!';
+    }
     notifyListeners();
   }
 
@@ -2452,6 +2529,9 @@ class GameManager extends ChangeNotifier {
     if (_state.bloodGold >= 100000) t.add('ACH_003');
     if (_state.newsLeatherDefenseStreak >= 2) t.add('ACH_002');
     if (_state.creditGrade >= 4) t.add('ACH_004');
+    if (successStreak >= 7) t.add('ACH_005');
+    if (_state.relics.length >= 10) t.add('ACH_006');
+    if (totalRuns >= 2) t.add('ACH_007');
     if (t.length != before) {
       for (final code in t.difference(_state.titles)) {
         if (kTitles.containsKey(code)) {
@@ -2584,13 +2664,11 @@ class GameManager extends ChangeNotifier {
   }
 
   void reset() {
-    // [게임성] 다회차 유산 — 직전 회차 결과로 영구 보너스 적립(패배해도 성장)
-    if (_state.cleared) {
-      metaStatBonus += Cfg.legacyStatClear;
-      metaGoldBonus += Cfg.legacyGoldClear;
-    } else if (_state.gameOver) {
-      metaStatBonus += Cfg.legacyStatLose;
-      metaGoldBonus += Cfg.legacyGoldLose;
+    // [게임성] 다회차 유산 — 직전 회차의 '성과'에 비례해 영구 보너스 적립(패배해도 성장).
+    if (_state.cleared || _state.gameOver) {
+      bestTurn = _state.turn > bestTurn ? _state.turn : bestTurn;
+      metaStatBonus += legacyStatEarn();
+      metaGoldBonus += legacyGoldEarn();
     }
     _state = PlayerState.newGame();
     if (metaStatBonus > 0 || metaGoldBonus > 0) {
@@ -2635,8 +2713,10 @@ class GameManager extends ChangeNotifier {
     bossNarrative = '';
     freeRoam = false;
     playthrough += 1; // 회차 증가 → 2회차부터 가이드 해제
+    totalRuns += 1;
     lastWasFail = false;
     successStreak = 0;
+    _failStreak = 0;
     focusQueue.clear();
     // 같은 슬롯에서 새 회차 바로 시작(자동 저장 유지)
     beginAdventure();
@@ -3461,7 +3541,10 @@ class _GameScreenState extends State<GameScreen> {
             begin: Alignment.centerLeft, end: Alignment.centerRight, colors: r.bg),
         border: Border(
             bottom: BorderSide(
-                color: m.isHyperActive ? const Color(0xFFE8A33D) : const Color(0xFF3A2F28))),
+                color: (m.isHyperActive || m.successStreak >= 3)
+                    ? const Color(0xFFE8A33D)
+                    : const Color(0xFF3A2F28),
+                width: m.successStreak >= 3 ? 2 : 1)),
       ),
       child: Row(children: [
         const SizedBox(width: 12),
@@ -3472,8 +3555,27 @@ class _GameScreenState extends State<GameScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(r.name,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                Row(children: [
+                  Flexible(
+                    child: Text(r.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  ),
+                  // [연출] 라이브 연승 — 상시 모멘텀을 눈으로 보여 '뽕'을 유지.
+                  if (m.successStreak >= 2) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFB7402E).withOpacity(0.85),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Text('🔥 ${m.successStreak}연승',
+                          style: const TextStyle(
+                              fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white)),
+                    ),
+                  ],
+                ]),
                 Text('🏕 ${s.domainStage}${s.raidLocked ? " · ⛔약탈LOCK" : ""}',
                     style: const TextStyle(fontSize: 10, color: Color(0xFFB8ADA2))),
               ]),
@@ -4217,6 +4319,42 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   // ── 엔딩 ──
+  // ── 회차 종료 시 '야성의 유산' 패널 — 죽어도 성장했음을 보여주는 리텐션 장치 ──
+  Widget _legacyPanel() {
+    final thisStat = m.legacyStatEarn();
+    final thisGold = m.legacyGoldEarn();
+    final nextStat = m.metaStatBonus + thisStat;
+    final nextGold = m.metaGoldBonus + thisGold;
+    final best = m.state.turn > m.bestTurn ? m.state.turn : m.bestTurn;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1410),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF8A6A2C)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        const Text('🏵 야성의 유산이 핏줄을 타고 흐릅니다',
+            style: TextStyle(color: Color(0xFFE8A33D), fontSize: 13.5, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 9),
+        Text('이번 대가 남긴 유산   +스탯 $thisStat · +금고 ${GameManager.fmt(thisGold)}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFFF0E6DC), fontSize: 12.5)),
+        const SizedBox(height: 6),
+        Text('다음 대가 물려받습니다 →  시작 스탯 +$nextStat · 시작 금고 +${GameManager.fmt(nextGold)}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                color: Color(0xFF81C784), fontSize: 12.5, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 9),
+        Text('🐅 최고 생존 $best턴 · 곧 ${m.totalRuns + 2}대째 부족장이 일어섭니다',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFF9C8C7E), fontSize: 11)),
+      ]),
+    );
+  }
+
   Widget _ending() {
     final s = m.state;
     return Container(
@@ -4249,7 +4387,9 @@ class _GameScreenState extends State<GameScreen> {
               '최종 전리품 ${GameManager.fmt(s.bloodGold)} · Lv.${s.level} · 칭호 ${s.titles.length}종 · 사냥 ${s.huntWins}승',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Color(0xFF9C8C7E), fontSize: 12)),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
+          _legacyPanel(),
+          const SizedBox(height: 20),
           UI.bigBtn('새 회차 시작', const Color(0xFFE8A33D), Colors.black, m.reset),
           const SizedBox(height: 16),
         ]),
@@ -4266,7 +4406,9 @@ class _GameScreenState extends State<GameScreen> {
             colors: [Color(0xFF3A0F0C), Color(0xFF0E0B09)]),
       ),
       padding: const EdgeInsets.all(26),
-      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      alignment: Alignment.center,
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
         const Text('☠️', style: TextStyle(fontSize: 56)),
         const SizedBox(height: 12),
         const Text('부족 소멸',
@@ -4276,9 +4418,13 @@ class _GameScreenState extends State<GameScreen> {
         const Text('금고를 끝내 복구하지 못했습니다.\n그림자 의회의 압류가 부족을 대륙에서 지웠습니다.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Color(0xFFD9CFC6), fontSize: 14, height: 1.7)),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
+        _legacyPanel(),
+        const SizedBox(height: 20),
         UI.bigBtn('재기의 부족 창설', const Color(0xFFB7402E), Colors.white, m.reset),
+        const SizedBox(height: 16),
       ]),
+      ),
     );
   }
 
