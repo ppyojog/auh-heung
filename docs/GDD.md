@@ -2,7 +2,8 @@
 
 > **AuhHeung : Beast Survivor** · 뱀파이어 서바이버즈류(bullet heaven)
 > 정본 설계서. 버전 관리는 git 히스토리로 한다(파일명에 버전 숫자 X).
-> 데이터 표는 [DATA.md](DATA.md) 참조. 코드: [`../lib/main.dart`](../lib/main.dart).
+> 밸런스 데이터는 **`AuhHeung_DB.xlsx`**(엑셀, 보기용) 참조 — 생성·정본은 [`build_db.py`](build_db.py).
+> 코드: [`../lib/main.dart`](../lib/main.dart).
 
 - **그래픽·사운드: 에셋 0** — 전부 코드 생성(CustomPainter 네온 / Web Audio 없이 PCM 합성).
 - **빌드:** Flutter 3.24.5 · 단일 파일 `lib/main.dart` · `--web-renderer html`
@@ -37,7 +38,7 @@
 - 공격: 전자동. 궁극기: 우하단 **[어흥]** 원형 버튼(충전 링·가득 차면 발광). 음소거: 좌하단 🔊/🔇.
 - 카메라 고정. 플레이어는 화면 안으로 클램프.
 
-## 4. 시스템 요약 (수치는 [DATA.md](DATA.md))
+## 4. 시스템 요약 (수치는 `AuhHeung_DB.xlsx`)
 - **캐릭터 3종**: 백호(균형)/흑표(유리대포)/무쇠뿔(탱크) — 시작 무기·스탯 상이.
 - **무기 5종**: 발톱·송곳니·포효·벼락·가시밭. 각 레벨 스케일.
 - **무기 진화(핵심 훅)**: 최대 레벨 + 시너지 패시브 → 초월 무기(천 개의 발톱/죽음의 고리/대지진).
