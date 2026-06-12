@@ -413,6 +413,37 @@ class World {
     if (phase == GPhase.menu || phase == GPhase.playing) _onDeath();
   }
 
+  // [치트] 내부 테스트 — 즉시 +10 레벨 + 자동 강화 10회
+  void cheatLevel10() {
+    if (phase != GPhase.menu && phase != GPhase.playing) return;
+    for (int i = 0; i < 10; i++) {
+      level += 1;
+      _autoUpgrade();
+    }
+    hp = maxHp;
+    rage = rageMax;
+    phase = GPhase.playing;
+    _say('🐞 치트! 대장님이 순식간에 +10 강해지셨습니다! 크하핫!', force: true, face: '🐞');
+  }
+
+  void _autoUpgrade() {
+    final opts = <void Function()>[];
+    if (clawLv < 8) opts.add(() => clawLv++);
+    if (fangLv < 6) opts.add(() => fangLv++);
+    if (roarLv < 7) opts.add(() => roarLv++);
+    if (boltLv < 7) opts.add(() => boltLv++);
+    if (spikeLv < 7) opts.add(() => spikeLv++);
+    opts.add(() => wildLv++);
+    opts.add(() {
+      hideLv++;
+      hp = min(hp + 25, maxHp);
+    });
+    opts.add(() => windLv++);
+    opts.add(() => hungerLv++);
+    opts.add(() => rageLv++);
+    opts[rng.nextInt(opts.length)]();
+  }
+
   // 조이스틱
   bool jActive = false;
   double jbx = 0, jby = 0, jkx = 0, jky = 0, dirx = 0, diry = 0;
@@ -468,6 +499,9 @@ class World {
   bool _hapticHit = false, _hapticBig = false;
 
   World() {
+    try {
+      slot = (int.tryParse(html.window.localStorage['surv_slot'] ?? '1') ?? 1).clamp(1, 3);
+    } catch (_) {}
     _loadRecords();
     _loadMeta();
   }
@@ -1158,9 +1192,43 @@ class World {
     _saveMeta();
   }
 
+  // ── 세이브 슬롯 (3개) — 슬롯별 송곳니·강화·기록 분리 저장 ──
+  int slot = 1;
+  String get _metaKey => 'surv_meta_$slot';
+  String get _recKey => 'surv_rec_$slot';
+
+  void selectSlot(int s) {
+    slot = s.clamp(1, 3);
+    try {
+      html.window.localStorage['surv_slot'] = slot.toString();
+    } catch (_) {}
+    fangs = 0;
+    meta.clear();
+    bestTime = 0;
+    bestKills = 0;
+    _loadRecords();
+    _loadMeta();
+  }
+
+  // 슬롯 요약(없으면 null) — 타이틀 슬롯 선택용
+  Map<String, dynamic>? slotInfo(int s) {
+    try {
+      final rec = html.window.localStorage['surv_rec_$s'];
+      final mt = html.window.localStorage['surv_meta_$s'];
+      if (rec == null && mt == null) return null;
+      int f = 0;
+      double bt = 0;
+      if (mt != null) f = ((jsonDecode(mt) as Map)['fangs'] as int?) ?? 0;
+      if (rec != null) bt = (((jsonDecode(rec) as Map)['bt']) as num?)?.toDouble() ?? 0;
+      return {'fangs': f, 'bt': bt};
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _loadMeta() {
     try {
-      final raw = html.window.localStorage['surv_meta'];
+      final raw = html.window.localStorage[_metaKey];
       if (raw == null) return;
       final j = (jsonDecode(raw) as Map).cast<String, dynamic>();
       fangs = j['fangs'] as int? ?? 0;
@@ -1171,7 +1239,7 @@ class World {
 
   void _saveMeta() {
     try {
-      html.window.localStorage['surv_meta'] = jsonEncode({'fangs': fangs, 'up': meta});
+      html.window.localStorage[_metaKey] = jsonEncode({'fangs': fangs, 'up': meta});
     } catch (_) {}
   }
 
@@ -1191,7 +1259,7 @@ class World {
   // ── 기록 저장 ──
   void _loadRecords() {
     try {
-      final raw = html.window.localStorage['surv_rec'];
+      final raw = html.window.localStorage[_recKey];
       if (raw == null) return;
       final j = (jsonDecode(raw) as Map).cast<String, dynamic>();
       bestTime = (j['bt'] as num?)?.toDouble() ?? 0;
@@ -1201,7 +1269,7 @@ class World {
 
   void _saveRecords() {
     try {
-      html.window.localStorage['surv_rec'] = jsonEncode({'bt': bestTime, 'bk': bestKills});
+      html.window.localStorage[_recKey] = jsonEncode({'bt': bestTime, 'bk': bestKills});
     } catch (_) {}
   }
 
@@ -1464,6 +1532,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             }), dark: false),
         const SizedBox(height: 10),
         _bigBtn('🏳  포기하고 마치기', P.blood, () => setState(() => world.giveUp()), dark: false),
+        const SizedBox(height: 10),
+        // [내부 테스트 치트] 타이니 +10 레벨
+        _bigBtn('🐞  치트: +10 레벨', const Color(0xFF2A3A2A),
+            () => setState(() => world.cheatLevel10()), dark: false),
       ]),
     );
   }
@@ -1587,6 +1659,45 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           const Text('드래그로 이동 · 공격 자동 · 광기가 차면 [어흥!]',
               textAlign: TextAlign.center,
               style: TextStyle(color: P.muted, fontSize: 12)),
+          const SizedBox(height: 18),
+          const Text('세이브 슬롯',
+              style: TextStyle(color: P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(3, (i) {
+              final n = i + 1;
+              final on = world.slot == n;
+              final info = world.slotInfo(n);
+              return GestureDetector(
+                onTap: () => setState(() => world.selectSlot(n)),
+                child: Container(
+                  width: 98,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 5),
+                  decoration: BoxDecoration(
+                    color: on ? P.gold.withOpacity(0.16) : Colors.black.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(color: on ? P.gold : P.line, width: on ? 2 : 1),
+                  ),
+                  child: Column(children: [
+                    Text('슬롯 $n',
+                        style: TextStyle(
+                            color: on ? Colors.white : P.muted,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 3),
+                    Text(
+                        info == null
+                            ? '빈 슬롯'
+                            : '🦷${info['fangs']}\n최고 ${World.mmss((info['bt'] as num).toDouble())}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: P.muted, fontSize: 10, height: 1.3)),
+                  ]),
+                ),
+              );
+            }),
+          ),
           const SizedBox(height: 18),
           const Text('맹수를 고르십시오',
               style: TextStyle(color: P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
@@ -1748,10 +1859,29 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         const Text('⚡ LEVEL UP',
             style: TextStyle(
                 color: P.gold, fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: 3)),
-        const SizedBox(height: 6),
-        Text('Lv ${world.level} — 성장의 길을 고르십시오',
-            style: const TextStyle(color: P.muted, fontSize: 13)),
-        const SizedBox(height: 18),
+        const SizedBox(height: 4),
+        Text('Lv ${world.level}', style: const TextStyle(color: P.muted, fontSize: 13)),
+        const SizedBox(height: 12),
+        // 타이니가 레벨업마다 떠받든다 (뽕)
+        Container(
+          constraints: const BoxConstraints(maxWidth: 360),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: P.gold.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: P.gold.withOpacity(0.6)),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(world.heraldFace, style: const TextStyle(fontSize: 22)),
+            const SizedBox(width: 9),
+            Flexible(
+              child: Text(world.heraldLine.isEmpty ? '또 강해지셨습니까, 대장님!' : world.heraldLine,
+                  style: const TextStyle(
+                      color: P.goldSoft, fontSize: 12.5, height: 1.3, fontWeight: FontWeight.w600)),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 16),
         ...world.choices.map((u) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: _upgradeCard(u),
