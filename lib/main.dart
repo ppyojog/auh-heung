@@ -8,6 +8,7 @@
 import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -103,6 +104,134 @@ class Upgrade {
   const Upgrade(this.icon, this.title, this.desc, this.apply);
 }
 
+// =============================================================================
+//  사운드 — 에셋 0. Dart에서 PCM 합성 → WAV → data URI → AudioElement 재생.
+//  (Web Audio API 메서드명 리스크 회피, 전부 안정적인 표준 API)
+// =============================================================================
+class Sfx {
+  final Map<String, html.AudioElement> _el = {};
+  final Map<String, int> _last = {};
+  final Random _r = Random(99);
+  bool muted = false;
+  bool _built = false;
+
+  void init() {
+    if (_built) return;
+    _built = true;
+    try {
+      _el['shoot'] = _mk(_mkWrap(_one(freq: 680, to: 430, dur: 0.09, type: 'square', vol: 0.14, dec: 0.07)));
+      _el['hit'] = _mk(_mkWrap(_one(freq: 220, to: 110, dur: 0.07, type: 'square', vol: 0.16, noise: 0.5, dec: 0.06)));
+      _el['pick'] = _mk(_mkWrap(_one(freq: 880, to: 1330, dur: 0.06, type: 'sine', vol: 0.11, dec: 0.05)));
+      _el['level'] = _mk(_arp([523.25, 659.25, 783.99, 1046.5], 0.085, vol: 0.2));
+      _el['roar'] = _mk(_mkWrap(_one(freq: 150, to: 60, dur: 0.4, type: 'saw', vol: 0.28, noise: 0.25, dec: 0.36)));
+      _el['boss'] = _mk(_mkWrap(_one(freq: 84, to: 68, dur: 0.7, type: 'saw', vol: 0.32, dec: 0.6, trem: 7)));
+      _el['death'] = _mk(_mkWrap(_one(freq: 320, to: 52, dur: 0.8, type: 'saw', vol: 0.3, dec: 0.75)));
+    } catch (_) {}
+  }
+
+  html.AudioElement _mk(Uint8List wav) {
+    final uri = 'data:audio/wav;base64,${base64Encode(wav)}';
+    return html.AudioElement()
+      ..src = uri
+      ..preload = 'auto';
+  }
+
+  void play(String name, {int gapMs = 0}) {
+    if (muted) return;
+    final a = _el[name];
+    if (a == null) return;
+    if (gapMs > 0) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if ((_last[name] ?? 0) + gapMs > now) return;
+      _last[name] = now;
+    }
+    try {
+      a.currentTime = 0;
+      a.play();
+    } catch (_) {}
+  }
+
+  // 단일 톤(스윕·노이즈·트레몰로·감쇠 포함) 샘플
+  List<double> _one({
+    required double freq,
+    double? to,
+    required double dur,
+    String type = 'sine',
+    double vol = 0.3,
+    double dec = 0.0,
+    double noise = 0.0,
+    double trem = 0.0,
+    int rate = 22050,
+  }) {
+    final n = (dur * rate).round();
+    final s = List<double>.filled(n, 0.0);
+    const atk = 0.008;
+    final d = dec <= 0 ? dur : dec;
+    for (int i = 0; i < n; i++) {
+      final t = i / rate;
+      final p = n <= 1 ? 0.0 : i / n;
+      final f = to == null ? freq : freq + (to - freq) * p;
+      final ph = 2 * pi * f * t;
+      double v;
+      if (type == 'square') {
+        v = sin(ph) >= 0 ? 1.0 : -1.0;
+      } else if (type == 'saw') {
+        v = 2 * ((f * t) % 1.0) - 1.0;
+      } else {
+        v = sin(ph);
+      }
+      if (noise > 0) v = v * (1 - noise) + (_r.nextDouble() * 2 - 1) * noise;
+      double env;
+      if (t < atk) {
+        env = t / atk;
+      } else {
+        env = (1 - (t - atk) / d).clamp(0.0, 1.0);
+      }
+      if (trem > 0) env *= 0.6 + 0.4 * sin(2 * pi * trem * t);
+      s[i] = (v * env * vol).clamp(-1.0, 1.0);
+    }
+    return s;
+  }
+
+  Uint8List _arp(List<double> freqs, double each, {double vol = 0.22}) {
+    final all = <double>[];
+    for (final f in freqs) {
+      all.addAll(_one(freq: f, dur: each, type: 'square', vol: vol, dec: each * 0.9));
+    }
+    return _wav(all, 22050);
+  }
+
+  Uint8List _mkWrap(List<double> s) => _wav(s, 22050);
+
+  Uint8List _wav(List<double> s, int rate) {
+    final n = s.length;
+    final b = ByteData(44 + n * 2);
+    void tag(int off, String t) {
+      for (int i = 0; i < t.length; i++) {
+        b.setUint8(off + i, t.codeUnitAt(i));
+      }
+    }
+
+    tag(0, 'RIFF');
+    b.setUint32(4, 36 + n * 2, Endian.little);
+    tag(8, 'WAVE');
+    tag(12, 'fmt ');
+    b.setUint32(16, 16, Endian.little);
+    b.setUint16(20, 1, Endian.little);
+    b.setUint16(22, 1, Endian.little);
+    b.setUint32(24, rate, Endian.little);
+    b.setUint32(28, rate * 2, Endian.little);
+    b.setUint16(32, 2, Endian.little);
+    b.setUint16(34, 16, Endian.little);
+    tag(36, 'data');
+    b.setUint32(40, n * 2, Endian.little);
+    for (int i = 0; i < n; i++) {
+      b.setInt16(44 + i * 2, (s[i].clamp(-1.0, 1.0) * 32767).round(), Endian.little);
+    }
+    return b.buffer.asUint8List();
+  }
+}
+
 enum GPhase { title, playing, levelup, dead }
 
 // =============================================================================
@@ -110,6 +239,7 @@ enum GPhase { title, playing, levelup, dead }
 // =============================================================================
 class World {
   final Random rng = Random();
+  final Sfx sfx = Sfx();
   GPhase phase = GPhase.title;
 
   double w = 0, h = 0; // 아레나 크기
@@ -179,7 +309,10 @@ class World {
   double get dmgMult => 1 + 0.12 * wildLv;
   double get fireMult => 1 + 0.10 * rageLv;
 
+  void toggleMute() => sfx.muted = !sfx.muted;
+
   void startGame() {
+    sfx.init(); // 사용자 탭(시작 버튼) 직후 → 오디오 정책 통과
     phase = GPhase.playing;
     time = 0;
     kills = 0;
@@ -284,6 +417,7 @@ class World {
       xpNext = (xpNext * 1.34 + 2).roundToDouble();
       _hapticBig = true;
       _shakeAdd(9);
+      sfx.play('level');
       pulses.add(Pulse(px, py, 120, 0.5, P.gold));
       _openLevelUp();
     }
@@ -353,6 +487,7 @@ class World {
     pulses.add(Pulse(px, py, 200, 0.6, P.blood));
     _shakeAdd(12);
     _hapticBig = true;
+    sfx.play('boss');
   }
 
   // ── 무기 발사 ──
@@ -386,6 +521,7 @@ class World {
           final a = baseAng + spread;
           bullets.add(Bullet(px, py, cos(a) * 340, sin(a) * 340, dmg, 6, 1.4, pierce));
         }
+        sfx.play('shoot', gapMs: 60);
       }
     }
     // 포효 (충격파 — 즉발 광역)
@@ -409,6 +545,7 @@ class World {
         }
         pulses.add(Pulse(px, py, radius, 0.45, P.gold));
         _shakeAdd(5);
+        sfx.play('roar');
       }
     }
     // 회전 송곳니 (지속 접촉) — _collide에서 처리
@@ -452,6 +589,7 @@ class World {
         if ((b.x - e.x) * (b.x - e.x) + (b.y - e.y) * (b.y - e.y) <= rr * rr) {
           _hurt(e, b.dmg);
           _float(e.x, e.y - e.radius - 4, b.dmg.round().toString(), P.goldSoft, 13);
+          sfx.play('hit', gapMs: 45);
           b.hitIds.add(e.id);
           if (b.pierce <= 0) {
             b.dead = true;
@@ -544,6 +682,7 @@ class World {
         if (d < 16) {
           xp += o.value;
           o.dead = true;
+          sfx.play('pick', gapMs: 35);
         }
       }
     }
@@ -609,6 +748,7 @@ class World {
   void _onDeath() {
     phase = GPhase.dead;
     _hapticBig = true;
+    sfx.play('death');
     if (time > bestTime) bestTime = time;
     if (kills > bestKills) bestKills = kills;
     _saveRecords();
@@ -711,6 +851,24 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.dead) _death(),
+            // 음소거 토글 (좌하단)
+            Positioned(
+              left: 10,
+              bottom: 10,
+              child: Material(
+                color: Colors.black.withOpacity(0.4),
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => setState(() => world.toggleMute()),
+                  child: Padding(
+                    padding: const EdgeInsets.all(9),
+                    child: Text(world.sfx.muted ? '🔇' : '🔊',
+                        style: const TextStyle(fontSize: 18)),
+                  ),
+                ),
+              ),
+            ),
           ]);
         }),
       ),
