@@ -114,6 +114,38 @@ class Upgrade {
   const Upgrade(this.icon, this.title, this.desc, this.apply);
 }
 
+// 충신 '타이니' — 플레이어를 과장되게 떠받드는 herald (USP: 양→호랑이 뽕).
+//  전부 텍스트(무음) → 회사에서 몰래 해도 소리 없이 뽕이 온다.
+class Tiny {
+  const Tiny._();
+  static const greet = [
+    '대장님, 오늘도 의회 놈들의 간담을 서늘하게 해주시죠. 제가 곁을 지킵니다.',
+    '크흐… 사냥의 시간입니다. 저 타이니, 대장님의 마지막 송곳니가 함께합니다.',
+  ];
+  static const level = [
+    '또 강해지셨습니까 대장님?! 하늘마저 대장님 편입니다!',
+    '이 힘… 대륙이 대장님을 중심으로 돕니다!',
+    '크하핫! 누가 감히 대장님을 양이라 했습니까!',
+    '한 꺼풀 벗을 때마다 더 사나워지시는군요. 역시 제 주인!',
+  ];
+  static const boss = [
+    '보셨습니까! 의회의 거수가 대장님 발톱에 찢겼습니다!',
+    '저 거대한 놈도 대장님 앞에선 한낱 먹잇감이었군요!',
+  ];
+  static const ult = [
+    '크하핫—! 대륙이 대장님의 포효 앞에 무릎 꿇습니다!!',
+    '어흥!! 이것이 진정한 맹수의 울음입니다, 대장님!',
+  ];
+  static const low = [
+    '대장님 정도면 이건 일부러 봐주시는 거죠…? 그렇죠?!',
+    '피 좀 보이는 게 대숩니까! 대장님은 더 사나워질 뿐입니다!',
+  ];
+  static const streak = [
+    '멈추질 않으십니다! 놈들이 줄지어 쓰러집니다!',
+    '대장님 지나간 자리엔 시체만 쌓입니다!',
+  ];
+}
+
 // 캐릭터 — 시작 무기·스탯이 달라 플레이 결이 바뀐다(리플레이성)
 class Character {
   final String id, name, icon, desc, startWeapon;
@@ -280,7 +312,11 @@ class World {
   double baseSpeed = 156;
   double pr = 11; // 반지름
   // 광기(어흥!) 궁극기 — 처치로 차오르고, 해방 시 화면 대포효 + 광폭화
-  double rage = 0, rageMax = 100, berserkT = 0;
+  double rage = 0, rageMax = 75, berserkT = 0;
+  // 충신 herald (텍스트 대사)
+  String heraldLine = '';
+  double heraldT = 0, _heraldCd = 0, _lowCd = 0;
+  int _streakKillMark = 0;
   int level = 1;
   double xp = 0, xpNext = 5;
   double orbitAngle = 0;
@@ -318,6 +354,16 @@ class World {
   void _float(double x, double y, String t, Color c, double size) {
     if (floats.length > 46) floats.removeAt(0);
     floats.add(FloatText(x, y, t, c, size));
+  }
+
+  String _pick(List<String> p) => p[rng.nextInt(p.length)];
+
+  // 충신 대사 출력 (force=false면 잡담 도배 방지 쿨다운)
+  void _say(String line, {double dur = 2.8, bool force = false}) {
+    if (!force && _heraldCd > 0) return;
+    heraldLine = line;
+    heraldT = dur;
+    _heraldCd = 0.8;
   }
 
   // 조이스틱
@@ -390,8 +436,14 @@ class World {
     hp = maxHp;
     rage = 0;
     berserkT = 0;
+    heraldLine = '';
+    heraldT = 0;
+    _heraldCd = 0;
+    _lowCd = 0;
+    _streakKillMark = 0;
     jActive = false;
     dirx = diry = 0;
+    _say(_pick(Tiny.greet), force: true);
   }
 
   // 광기 해방 — 어흥! 화면 전체 대포효 + 광폭화
@@ -411,6 +463,7 @@ class World {
     pulses.add(Pulse(px, py, max(w, h), 0.55, P.gold));
     pulses.add(Pulse(px, py, max(w, h) * 0.6, 0.45, P.blood));
     _float(px, py - 30, '어 흥 !!', P.gold, 30);
+    _say(_pick(Tiny.ult), force: true);
     _shakeAdd(18);
     _hapticBig = true;
     sfx.play('boss');
@@ -456,16 +509,30 @@ class World {
     if (dt > 0.05) dt = 0.05;
     time += dt;
     if (berserkT > 0) berserkT = max(0, berserkT - dt);
-    // 생존 마일스톤 — 짧은 서사로 뽕
+    // 충신 타이머
+    if (heraldT > 0) heraldT -= dt;
+    if (_heraldCd > 0) _heraldCd -= dt;
+    if (_lowCd > 0) _lowCd -= dt;
+    // 생존 마일스톤 — 충신이 떠받든다
     if (_mileShown < 1 && time >= 60) {
       _mileShown = 1;
-      _float(px, py - 52, '1분 — 대륙이 네 포효를 듣기 시작한다', P.gold, 15);
+      _say('1분 생존! 대륙이 대장님의 포효를 듣기 시작했습니다!', force: true);
     } else if (_mileShown < 2 && time >= 120) {
       _mileShown = 2;
-      _float(px, py - 52, '2분 — 그림자 의회가 너를 두려워한다', P.gold, 15);
+      _say('2분! 이제 그림자 의회가 대장님 이름만 들어도 떱니다!', force: true);
     } else if (_mileShown < 3 && time >= 180) {
       _mileShown = 3;
-      _float(px, py - 52, '3분 — 너의 이름이 곧 전설이 된다', P.gold, 15);
+      _say('3분 생존… 대장님은 이미 살아있는 전설이십니다!', force: true);
+    }
+    // 위기 시 가스라이팅성 응원
+    if (_lowCd <= 0 && hp < maxHp * 0.25) {
+      _lowCd = 9;
+      _say(_pick(Tiny.low));
+    }
+    // 학살 연쇄
+    if (kills - _streakKillMark >= 30) {
+      _streakKillMark = kills;
+      _say(_pick(Tiny.streak));
     }
 
     // 이동
@@ -499,6 +566,7 @@ class World {
       _hapticBig = true;
       _shakeAdd(9);
       sfx.play('level');
+      _say(_pick(Tiny.level), force: true);
       pulses.add(Pulse(px, py, 120, 0.5, P.gold));
       _openLevelUp();
     }
@@ -784,6 +852,7 @@ class World {
         rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)));
         if (e.type == EType.boss) {
           _float(e.x, e.y - e.radius, 'BOSS 격파!', P.gold, 18);
+          _say(_pick(Tiny.boss), force: true);
           _shakeAdd(10);
           _hapticBig = true;
         }
@@ -1027,6 +1096,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ),
             if (world.phase == GPhase.playing || world.phase == GPhase.levelup) _hud(),
             if (world.phase == GPhase.playing) _rageButton(),
+            if (world.phase == GPhase.playing && world.heraldT > 0) _heraldBubble(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.dead) _death(),
@@ -1081,6 +1151,44 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             // 경험치
             _bar(xpFrac, P.cyan, height: 6),
           ]),
+        ),
+      ),
+    );
+  }
+
+  // ── 충신 '타이니' 말풍선 (상단, 무음 텍스트) ──
+  Widget _heraldBubble() {
+    final fade = world.heraldT > 0.5 ? 1.0 : (world.heraldT / 0.5).clamp(0.0, 1.0);
+    return Positioned(
+      top: 84,
+      left: 14,
+      right: 14,
+      child: IgnorePointer(
+        child: Center(
+          child: Opacity(
+            opacity: fade,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 430),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.62),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: P.gold.withOpacity(0.7)),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Text('🐯', style: TextStyle(fontSize: 17)),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(world.heraldLine,
+                      style: const TextStyle(
+                          color: P.goldSoft,
+                          fontSize: 12.5,
+                          height: 1.3,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ]),
+            ),
+          ),
         ),
       ),
     );
