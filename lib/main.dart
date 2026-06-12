@@ -114,6 +114,23 @@ class Upgrade {
   const Upgrade(this.icon, this.title, this.desc, this.apply);
 }
 
+// 캐릭터 — 시작 무기·스탯이 달라 플레이 결이 바뀐다(리플레이성)
+class Character {
+  final String id, name, icon, desc, startWeapon;
+  final Color color;
+  final double dmg, hp, speed;
+  const Character(this.id, this.name, this.icon, this.desc, this.color, this.startWeapon,
+      {this.dmg = 1, this.hp = 1, this.speed = 1});
+}
+
+const List<Character> kChars = [
+  Character('white', '백호 부족장', '🐯', '균형의 맹수. 발톱 폭풍으로 시작.', P.gold, 'claw'),
+  Character('black', '그림자 흑표', '🐆', '유리대포. 공격력↑ 체력↓. 회전 송곳니로 시작.', P.purple, 'fang',
+      dmg: 1.3, hp: 0.7, speed: 1.12),
+  Character('iron', '무쇠뿔 들소', '🐃', '육중한 탱크. 체력↑ 느림. 포효로 시작.', P.cyan, 'roar',
+      dmg: 0.9, hp: 1.6, speed: 0.82),
+];
+
 // =============================================================================
 //  사운드 — 에셋 0. Dart에서 PCM 합성 → WAV → data URI → AudioElement 재생.
 //  (Web Audio API 메서드명 리스크 회피, 전부 안정적인 표준 API)
@@ -273,6 +290,9 @@ class World {
   bool clawEvo = false, fangEvo = false, roarEvo = false;
   // 패시브 레벨
   int wildLv = 0, hideLv = 0, windLv = 0, hungerLv = 0, rageLv = 0;
+  // 선택 캐릭터 + 시작 배수
+  int charIndex = 0;
+  double charDmg = 1, charHp = 1, charSpeed = 1;
 
   // 타이머
   double clawT = 0, roarT = 0, spawnT = 0, bossT = 90, boltT = 0, spikeT = 0;
@@ -315,11 +335,11 @@ class World {
     _loadRecords();
   }
 
-  // ── 파생 스탯 ──
-  double get maxHp => baseMaxHp + 25 * hideLv;
-  double get speed => baseSpeed * (1 + 0.10 * windLv);
+  // ── 파생 스탯 (캐릭터 배수 반영) ──
+  double get maxHp => (baseMaxHp + 25 * hideLv) * charHp;
+  double get speed => baseSpeed * (1 + 0.10 * windLv) * charSpeed;
   double get pickupRange => 46 + 16.0 * hungerLv;
-  double get dmgMult => 1 + 0.12 * wildLv;
+  double get dmgMult => (1 + 0.12 * wildLv) * charDmg;
   double get fireMult => 1 + 0.10 * rageLv;
 
   void toggleMute() => sfx.muted = !sfx.muted;
@@ -332,9 +352,14 @@ class World {
     level = 1;
     xp = 0;
     xpNext = 5;
-    clawLv = 1;
-    fangLv = 0;
-    roarLv = 0;
+    // 캐릭터 적용
+    final ch = kChars[charIndex.clamp(0, kChars.length - 1)];
+    charDmg = ch.dmg;
+    charHp = ch.hp;
+    charSpeed = ch.speed;
+    clawLv = ch.startWeapon == 'claw' ? 1 : 0;
+    fangLv = ch.startWeapon == 'fang' ? 1 : 0;
+    roarLv = ch.startWeapon == 'roar' ? 1 : 0;
     boltLv = 0;
     spikeLv = 0;
     clawEvo = fangEvo = roarEvo = false;
@@ -525,8 +550,9 @@ class World {
 
   void _fireWeapons(double dt) {
     // 발톱 폭풍 (투사체) — 진화 시 '천 개의 발톱': 전방위 난사
-    clawT -= dt;
-    if (clawT <= 0) {
+    if (clawLv > 0) {
+      clawT -= dt;
+      if (clawT <= 0) {
       clawT = ((clawEvo ? 0.55 : 1.0 * pow(0.9, clawLv - 1)) / fireMult).toDouble();
       final target = _nearest();
       if ((target != null || clawEvo) && bullets.length < 320) {
@@ -546,6 +572,7 @@ class World {
           }
         }
         sfx.play('shoot', gapMs: 60);
+      }
       }
     }
     // 벼락 (연쇄 번개)
@@ -1065,27 +1092,72 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   // ── 타이틀 ──
   Widget _title() {
+    final sel = kChars[world.charIndex.clamp(0, kChars.length - 1)];
     return Container(
-      color: Colors.black.withOpacity(0.55),
+      color: Colors.black.withOpacity(0.62),
       alignment: Alignment.center,
-      padding: const EdgeInsets.all(28),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('🐯', style: TextStyle(fontSize: 64)),
-        const SizedBox(height: 8),
-        const Text('어흥 : 야수의 생존',
-            style: TextStyle(
-                color: P.gold, fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 2)),
-        const SizedBox(height: 14),
-        const Text('드래그로 이동 · 공격은 자동\n쏟아지는 의회의 졸개들 속에서 버텨라',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: P.parch, fontSize: 14, height: 1.7)),
-        const SizedBox(height: 10),
-        if (world.bestTime > 0)
-          Text('최고 기록 ${World.mmss(world.bestTime)} · ${world.bestKills}킬',
-              style: const TextStyle(color: P.muted, fontSize: 13)),
-        const SizedBox(height: 26),
-        _bigBtn('⚔  생존 시작', P.gold, () => setState(() => world.startGame())),
-      ]),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 8),
+          const Text('어흥 : 야수의 생존',
+              style: TextStyle(
+                  color: P.gold, fontSize: 27, fontWeight: FontWeight.bold, letterSpacing: 2)),
+          const SizedBox(height: 8),
+          const Text('드래그로 이동 · 공격은 자동',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: P.muted, fontSize: 13)),
+          const SizedBox(height: 18),
+          const Text('맹수를 고르십시오',
+              style: TextStyle(color: P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(kChars.length, (i) {
+              final c = kChars[i];
+              final on = i == world.charIndex;
+              return GestureDetector(
+                onTap: () => setState(() => world.charIndex = i),
+                child: Container(
+                  width: 92,
+                  margin: const EdgeInsets.symmetric(horizontal: 5),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+                  decoration: BoxDecoration(
+                    color: on ? c.color.withOpacity(0.16) : Colors.black.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: on ? c.color : P.line, width: on ? 2.2 : 1),
+                  ),
+                  child: Column(children: [
+                    Text(c.icon, style: const TextStyle(fontSize: 30)),
+                    const SizedBox(height: 5),
+                    Text(c.name,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: on ? Colors.white : P.muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold)),
+                  ]),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 40,
+            child: Text(sel.desc,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: P.parch, fontSize: 12.5, height: 1.4)),
+          ),
+          const SizedBox(height: 6),
+          if (world.bestTime > 0)
+            Text('최고 기록 ${World.mmss(world.bestTime)} · ${world.bestKills}킬',
+                style: const TextStyle(color: P.muted, fontSize: 12)),
+          const SizedBox(height: 22),
+          _bigBtn('⚔  생존 시작', sel.color, () => setState(() => world.startGame())),
+          const SizedBox(height: 16),
+        ]),
+      ),
     );
   }
 
