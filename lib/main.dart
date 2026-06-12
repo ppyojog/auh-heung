@@ -374,10 +374,20 @@ class World {
   double pr = 11; // 반지름
   // 광기(어흥!) 궁극기 — 처치로 차오르고, 해방 시 화면 대포효 + 광폭화
   double rage = 0, rageMax = 75, berserkT = 0;
-  // 펫 타이니 — 플레이어를 졸졸 따라다니며 표정으로 반응
+  // 펫 타이니 — 플레이어를 졸졸 따라다니며 표정으로 반응 + 짧은 말풍선
   double petX = 0, petY = 0, petHappyT = 0;
+  String petLine = '';
+  double petLineT = 0, _petSayCd = 0;
+
+  void _petSay(String s) {
+    if (_petSayCd > 0) return;
+    petLine = s;
+    petLineT = 1.6;
+    _petSayCd = 3.2;
+  }
   // 포식(Devour) — 삼킬수록 회복 + 호랑이가 점점 커짐 (양→호랑이 USP)
   int devour = 0;
+  int cheatPending = 0; // [치트] 대기 중인 강제 레벨업(스킬 선택) 횟수
   double get growScale => (0.9 + devour * 0.005).clamp(0.9, 1.6);
   // 업적
   final Set<String> achieved = {};
@@ -495,17 +505,13 @@ class World {
     if (phase == GPhase.menu || phase == GPhase.playing) _onDeath();
   }
 
-  // [치트] 내부 테스트 — 즉시 +10 레벨 + 자동 강화 10회
+  // [치트] 내부 테스트 — +10 레벨업을 예약(각 레벨마다 스킬 선택)
   void cheatLevel10() {
     if (phase != GPhase.menu && phase != GPhase.playing) return;
-    for (int i = 0; i < 10; i++) {
-      level += 1;
-      _autoUpgrade();
-    }
+    cheatPending += 10;
     hp = maxHp;
-    rage = rageMax;
-    phase = GPhase.playing;
-    _say('🐞 치트! 대장님이 순식간에 +10 강해지셨습니다! 크하핫!', force: true, face: '🐞');
+    phase = GPhase.playing; // 메뉴 닫고 → 레벨업 선택 연쇄 시작
+    _say('🐞 치트! 10번 강화를 골라보십시오, 대장님!', force: true, face: '🐞');
   }
 
   void _autoUpgrade() {
@@ -645,7 +651,11 @@ class World {
     petX = px - 20;
     petY = py - 22;
     petHappyT = 0;
+    petLine = '';
+    petLineT = 0;
+    _petSayCd = 0;
     devour = 0;
+    cheatPending = 0;
     runBoss = 0;
     pendingAch.clear();
     heraldLine = '';
@@ -773,6 +783,11 @@ class World {
     if (berserkT > 0) berserkT = max(0, berserkT - dt);
     // 펫 타이니 — 이동 방향의 '뒤'를 360° 따라다님(움직이는 쪽 반대편으로 자동 조정)
     if (petHappyT > 0) petHappyT = max(0, petHappyT - dt);
+    if (petLineT > 0) petLineT -= dt;
+    if (_petSayCd > 0) _petSayCd -= dt;
+    if (_petSayCd <= 0 && rng.nextDouble() < dt * 0.14) {
+      _petSay(_pick(const ['두근두근', '히힝~', '크항!', '...', '대장님 멋져요']));
+    }
     final moving0 = dirx != 0 || diry != 0;
     final tpx = moving0 ? px - dirx * 28 : px - 22;
     final tpy = moving0 ? py - diry * 28 : py - 24;
@@ -797,11 +812,13 @@ class World {
     // 위기 시 가스라이팅성 응원
     if (_lowCd <= 0 && hp < maxHp * 0.25) {
       _lowCd = 9;
+      _petSay('조심하세요!');
       _say(_pick(Tiny.low), face: '😿');
     }
     // 학살 연쇄
     if (kills - _streakKillMark >= 30) {
       _streakKillMark = kills;
+      _petSay('크항—!');
       _say(_pick(Tiny.streak), face: '😼');
     }
     // 스테이지 자동 상승 — 플레이할수록 점점 사나워짐 (45초마다 +1)
@@ -841,14 +858,19 @@ class World {
       _onDeath();
       return;
     }
-    // 레벨업
-    if (xp >= xpNext) {
-      xp -= xpNext;
+    // 레벨업 (cheatPending이 있으면 강제 레벨업 → 정상 선택 흐름)
+    if (xp >= xpNext || cheatPending > 0) {
+      if (cheatPending > 0) {
+        cheatPending -= 1;
+      } else {
+        xp -= xpNext;
+      }
       level += 1;
       xpNext = (xpNext * 1.26 + 2).roundToDouble();
       _hapticBig = true;
       _shakeAdd(9);
       petHappyT = 1.6; // 펫이 신남
+      _petSay('오— 강해졌다!');
       sfx.play('level');
       _say(_pick(Tiny.level), force: true, face: '😺');
       pulses.add(Pulse(px, py, 120, 0.5, P.gold));
@@ -1152,6 +1174,7 @@ class World {
         if (e.type == EType.boss) {
           runBoss += 1;
           _float(e.x, e.y - e.radius, 'BOSS 격파!', P.gold, 18);
+          _petSay('해냈다!');
           _say(_pick(Tiny.boss), force: true, face: '😼');
           _shakeAdd(10);
           _hapticBig = true;
@@ -1662,6 +1685,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     return Container(
       color: Colors.black.withOpacity(0.8),
       alignment: Alignment.center,
+      child: SingleChildScrollView(
       padding: const EdgeInsets.all(22),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         const Text('🐯 타이니', style: TextStyle(color: P.gold, fontSize: 22, fontWeight: FontWeight.bold)),
@@ -1711,7 +1735,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ]),
           ]),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 12),
+        _statusPanel(),
+        const SizedBox(height: 16),
         _bigBtn('▶  이어하기', P.gold, () => setState(() => world.resume())),
         const SizedBox(height: 10),
         _bigBtn('🦷  전리품 상점', P.panel, () => setState(() {
@@ -1725,6 +1751,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         _bigBtn('🐞  치트: +10 레벨', const Color(0xFF2A3A2A),
             () => setState(() => world.cheatLevel10()), dark: false),
       ]),
+      ),
     );
   }
 
@@ -2393,6 +2420,55 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
+  // 내 빌드(스킬·패시브·레벨) 상태 — 타이니 메뉴에서 확인
+  Widget _statusPanel() {
+    final chips = <Widget>[];
+    void add(String ic, String nm, int lv, [bool evo = false]) {
+      if (lv <= 0) return;
+      chips.add(_statChip('$ic $nm ${evo ? "★진화" : "Lv$lv"}'));
+    }
+
+    add('🪝', '발톱', world.clawLv, world.clawEvo);
+    add('🦷', '송곳니', world.fangLv, world.fangEvo);
+    add('💢', '포효', world.roarLv, world.roarEvo);
+    add('⚡', '벼락', world.boltLv);
+    add('🌵', '가시밭', world.spikeLv);
+    add('🐅', '야성', world.wildLv);
+    add('🛡', '가죽', world.hideLv);
+    add('🌬', '바람', world.windLv);
+    add('🧲', '굶주림', world.hungerLv);
+    add('🔥', '분노', world.rageLv);
+    return Container(
+      width: 320,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: P.panel,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: P.line),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('내 빌드  ·  Lv ${world.level}  ·  ❤ ${world.hp.ceil()}/${world.maxHp.round()}',
+            style: const TextStyle(color: P.goldSoft, fontSize: 12.5, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: chips.isEmpty ? [_statChip('아직 강화 없음')] : chips,
+        ),
+      ]),
+    );
+  }
+
+  Widget _statChip(String t) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: P.line),
+        ),
+        child: Text(t, style: const TextStyle(color: P.parch, fontSize: 10.5)),
+      );
+
   Widget _stageBtn(String label, bool enabled, VoidCallback onTap) {
     return GestureDetector(
       onTap: enabled ? onTap : null,
@@ -2668,6 +2744,29 @@ class WorldPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
+
+    // 펫 말풍선 (반투명, 짧게)
+    if (w.petLineT > 0 && w.petLine.isNotEmpty) {
+      final fa = (w.petLineT < 0.4 ? w.petLineT / 0.4 : 1.0).clamp(0.0, 1.0) * 0.82;
+      final bt = TextPainter(
+        text: TextSpan(
+            text: w.petLine,
+            style: TextStyle(
+                fontSize: 10.5, fontWeight: FontWeight.w600, color: P.goldSoft.withOpacity(fa))),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final bx = x + 13, by = y - bt.height / 2 - 8;
+      final rect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(bx - 5, by - 3, bt.width + 10, bt.height + 6), const Radius.circular(7));
+      canvas.drawRRect(rect, Paint()..color = Colors.black.withOpacity(0.5 * fa));
+      canvas.drawRRect(
+          rect,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..color = P.gold.withOpacity(0.5 * fa));
+      bt.paint(canvas, Offset(bx, by));
+    }
   }
 
   // 플레이어 — 캐릭터별 외형 + 코드 절차 애니메이션(숨쉬기·통통·눈깜빡·꼬리). 귀엽게.
