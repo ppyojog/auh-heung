@@ -98,6 +98,16 @@ class FloatText {
         maxLife = 0.7;
 }
 
+class LineFx {
+  final double x1, y1, x2, y2;
+  final Color color;
+  double life;
+  final double maxLife;
+  LineFx(this.x1, this.y1, this.x2, this.y2, this.color)
+      : life = 0.16,
+        maxLife = 0.16;
+}
+
 class Upgrade {
   final String icon, title, desc;
   final VoidCallback apply;
@@ -258,12 +268,14 @@ class World {
   double contactCdView = 0; // 피격 점멸 표시용
 
   // 무기 레벨 (claw는 시작 보유 Lv1)
-  int clawLv = 1, fangLv = 0, roarLv = 0;
+  int clawLv = 1, fangLv = 0, roarLv = 0, boltLv = 0, spikeLv = 0;
+  // 무기 진화 (최대 레벨 + 시너지 패시브 → 초월 무기)
+  bool clawEvo = false, fangEvo = false, roarEvo = false;
   // 패시브 레벨
   int wildLv = 0, hideLv = 0, windLv = 0, hungerLv = 0, rageLv = 0;
 
   // 타이머
-  double clawT = 0, roarT = 0, spawnT = 0, bossT = 90;
+  double clawT = 0, roarT = 0, spawnT = 0, bossT = 90, boltT = 0, spikeT = 0;
 
   // 엔티티
   final List<Enemy> enemies = [];
@@ -272,6 +284,7 @@ class World {
   final List<Particle> parts = [];
   final List<Pulse> pulses = [];
   final List<FloatText> floats = []; // 데미지 숫자 등
+  final List<LineFx> lines = []; // 벼락 등 선형 이펙트
   double shake = 0; // 화면 흔들림 강도
   int _eid = 0;
 
@@ -322,9 +335,14 @@ class World {
     clawLv = 1;
     fangLv = 0;
     roarLv = 0;
+    boltLv = 0;
+    spikeLv = 0;
+    clawEvo = fangEvo = roarEvo = false;
     wildLv = hideLv = windLv = hungerLv = rageLv = 0;
     clawT = 0;
     roarT = 0;
+    boltT = 0;
+    spikeT = 0;
     spawnT = 0.6;
     bossT = 90;
     orbitAngle = 0;
@@ -334,6 +352,7 @@ class World {
     parts.clear();
     pulses.clear();
     floats.clear();
+    lines.clear();
     shake = 0;
     px = w / 2;
     py = h / 2;
@@ -505,23 +524,80 @@ class World {
   }
 
   void _fireWeapons(double dt) {
-    // 발톱 폭풍 (투사체)
+    // 발톱 폭풍 (투사체) — 진화 시 '천 개의 발톱': 전방위 난사
     clawT -= dt;
     if (clawT <= 0) {
-      final cd = (1.0 * pow(0.9, clawLv - 1)) / fireMult;
-      clawT = cd.toDouble();
+      clawT = ((clawEvo ? 0.55 : 1.0 * pow(0.9, clawLv - 1)) / fireMult).toDouble();
       final target = _nearest();
-      if (target != null && bullets.length < 200) {
-        final n = 1 + (clawLv >= 2 ? 1 : 0) + (clawLv >= 4 ? 1 : 0) + (clawLv >= 6 ? 1 : 0);
-        final dmg = (7 + clawLv * 4) * dmgMult;
-        final pierce = clawLv >= 5 ? 1 : 0;
-        final baseAng = atan2(target.y - py, target.x - px);
-        for (int i = 0; i < n; i++) {
-          final spread = (i - (n - 1) / 2) * 0.18;
-          final a = baseAng + spread;
-          bullets.add(Bullet(px, py, cos(a) * 340, sin(a) * 340, dmg, 6, 1.4, pierce));
+      if ((target != null || clawEvo) && bullets.length < 320) {
+        final dmg = (7 + clawLv * 4) * dmgMult * (clawEvo ? 1.7 : 1.0);
+        final pierce = clawEvo ? 3 : (clawLv >= 5 ? 1 : 0);
+        if (clawEvo) {
+          for (int i = 0; i < 16; i++) {
+            final a = orbitAngle * 0.4 + i * 6.2831853 / 16;
+            bullets.add(Bullet(px, py, cos(a) * 360, sin(a) * 360, dmg, 6, 1.5, pierce));
+          }
+        } else {
+          final n = 1 + (clawLv >= 2 ? 1 : 0) + (clawLv >= 4 ? 1 : 0) + (clawLv >= 6 ? 1 : 0);
+          final baseAng = atan2(target!.y - py, target.x - px);
+          for (int i = 0; i < n; i++) {
+            final a = baseAng + (i - (n - 1) / 2) * 0.18;
+            bullets.add(Bullet(px, py, cos(a) * 340, sin(a) * 340, dmg, 6, 1.4, pierce));
+          }
         }
         sfx.play('shoot', gapMs: 60);
+      }
+    }
+    // 벼락 (연쇄 번개)
+    if (boltLv > 0) {
+      boltT -= dt;
+      if (boltT <= 0) {
+        boltT = ((1.5 * pow(0.9, boltLv - 1)) / fireMult).toDouble();
+        if (enemies.isNotEmpty) {
+          double dmg = (10 + boltLv * 6) * dmgMult;
+          double fx = px, fy = py;
+          final chain = 1 + boltLv;
+          final hitSet = <int>{};
+          for (int c = 0; c < chain; c++) {
+            Enemy? nxt;
+            double bd = 210.0 * 210.0;
+            for (final e in enemies) {
+              if (e.dead || hitSet.contains(e.id)) continue;
+              final d = (e.x - fx) * (e.x - fx) + (e.y - fy) * (e.y - fy);
+              if (d < bd) {
+                bd = d;
+                nxt = e;
+              }
+            }
+            if (nxt == null) break;
+            lines.add(LineFx(fx, fy, nxt.x, nxt.y, P.cyan));
+            _hurt(nxt, dmg);
+            _float(nxt.x, nxt.y - nxt.radius, dmg.round().toString(), P.cyan, 12);
+            hitSet.add(nxt.id);
+            fx = nxt.x;
+            fy = nxt.y;
+            dmg *= 0.82;
+          }
+          sfx.play('hit', gapMs: 30);
+        }
+      }
+    }
+    // 가시밭 (주기적 광역 지대)
+    if (spikeLv > 0) {
+      spikeT -= dt;
+      if (spikeT <= 0) {
+        spikeT = ((1.8 * pow(0.92, spikeLv - 1)) / fireMult).toDouble();
+        final radius = 42 + spikeLv * 7.0;
+        final dmg = (8 + spikeLv * 5) * dmgMult;
+        final ox = px + (rng.nextDouble() - 0.5) * 160;
+        final oy = py + (rng.nextDouble() - 0.5) * 160;
+        for (final e in enemies) {
+          final rr = radius + e.radius;
+          if ((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy) <= rr * rr) {
+            _hurt(e, dmg);
+          }
+        }
+        pulses.add(Pulse(ox, oy, radius, 0.5, P.green));
       }
     }
     // 포효 (충격파 — 즉발 광역)
@@ -530,16 +606,17 @@ class World {
       if (roarT <= 0) {
         final cd = (2.6 * pow(0.93, roarLv - 1)) / fireMult;
         roarT = cd.toDouble();
-        final radius = 70 + roarLv * 16.0;
-        final dmg = (8 + roarLv * 6) * dmgMult;
+        final radius = (70 + roarLv * 16.0) * (roarEvo ? 1.8 : 1.0);
+        final dmg = (8 + roarLv * 6) * dmgMult * (roarEvo ? 2.2 : 1.0);
+        final push = roarEvo ? 30.0 : 14.0;
         for (final e in enemies) {
           final d = sqrt((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py));
           if (d <= radius + e.radius) {
             _hurt(e, dmg);
             // 살짝 밀어내기
             if (d > 0.1) {
-              e.x += (e.x - px) / d * 14;
-              e.y += (e.y - py) / d * 14;
+              e.x += (e.x - px) / d * push;
+              e.y += (e.y - py) / d * push;
             }
           }
         }
@@ -602,12 +679,12 @@ class World {
     }
     bullets.removeWhere((b) => b.dead);
 
-    // 회전 송곳니 vs 적 (지속 DPS)
+    // 회전 송곳니 vs 적 (지속 DPS) — 진화 시 '죽음의 고리'
     if (fangLv > 0) {
-      final cnt = fangLv;
-      final orad = 60 + fangLv * 4.0;
-      final fdps = (22 + fangLv * 14) * dmgMult;
-      final fr = 13.0;
+      final cnt = fangLv + (fangEvo ? 3 : 0);
+      final orad = (60 + fangLv * 4.0) * (fangEvo ? 1.4 : 1.0);
+      final fdps = (22 + fangLv * 14) * dmgMult * (fangEvo ? 1.9 : 1.0);
+      final fr = fangEvo ? 17.0 : 13.0;
       for (int i = 0; i < cnt; i++) {
         final a = orbitAngle + i * 6.2831853 / cnt;
         final fx = px + cos(a) * orad;
@@ -708,12 +785,32 @@ class World {
       f.life -= dt;
     }
     floats.removeWhere((f) => f.life <= 0);
+    for (final l in lines) {
+      l.life -= dt;
+    }
+    lines.removeWhere((l) => l.life <= 0);
     if (shake > 0) shake = max(0, shake - dt * 26);
   }
 
   // ── 레벨업 강화 ──
   void _openLevelUp() {
     phase = GPhase.levelup;
+
+    // [진화] 무기 최대 레벨 + 시너지 패시브 → 초월 무기 (뱀서의 핵심 훅, 우선 노출)
+    final evos = <Upgrade>[];
+    if (clawLv >= 8 && rageLv >= 3 && !clawEvo) {
+      evos.add(Upgrade('🌩', '진화! 천 개의 발톱', '발톱이 전방위로 폭주한다 (발톱 Lv8 + 분노)',
+          () => clawEvo = true));
+    }
+    if (fangLv >= 6 && wildLv >= 3 && !fangEvo) {
+      evos.add(Upgrade('☠', '진화! 죽음의 고리', '송곳니 +3·거대화·맹독 DPS (송곳니 Lv6 + 야성)',
+          () => fangEvo = true));
+    }
+    if (roarLv >= 7 && hideLv >= 3 && !roarEvo) {
+      evos.add(Upgrade('🌋', '진화! 대지진', '포효가 대륙을 가른다 — 범위·위력 폭증 (포효 Lv7 + 가죽)',
+          () => roarEvo = true));
+    }
+
     final pool = <Upgrade>[];
     if (clawLv < 8) {
       pool.add(Upgrade('🪝', '발톱 폭풍', clawLv == 0 ? '발톱 투사체를 자동으로 날린다' : '투사체 강화 (Lv ${clawLv + 1})',
@@ -727,6 +824,14 @@ class World {
       pool.add(Upgrade('💢', '포효', roarLv == 0 ? '주기적으로 주변을 휩쓰는 충격파' : '포효 범위·위력 강화 (Lv ${roarLv + 1})',
           () => roarLv++));
     }
+    if (boltLv < 7) {
+      pool.add(Upgrade('⚡', '벼락', boltLv == 0 ? '가까운 적들에게 연쇄하는 번개' : '연쇄·위력 강화 (Lv ${boltLv + 1})',
+          () => boltLv++));
+    }
+    if (spikeLv < 7) {
+      pool.add(Upgrade('🌵', '가시밭', spikeLv == 0 ? '바닥에 주기적으로 솟는 가시 지대' : '범위·위력 강화 (Lv ${spikeLv + 1})',
+          () => spikeLv++));
+    }
     pool.add(Upgrade('🐅', '야성', '모든 공격력 +12% (Lv ${wildLv + 1})', () => wildLv++));
     pool.add(Upgrade('🛡', '가죽', '최대 체력 +25, 즉시 25 회복', () {
       hideLv++;
@@ -736,7 +841,14 @@ class World {
     pool.add(Upgrade('👅', '굶주림', '구슬 수집 범위 +16 (Lv ${hungerLv + 1})', () => hungerLv++));
     pool.add(Upgrade('🔥', '분노', '공격 속도 +10% (Lv ${rageLv + 1})', () => rageLv++));
     pool.shuffle(rng);
-    choices = pool.take(3).toList();
+
+    // 진화는 항상 먼저 노출 + 나머지는 무작위로 채워 3~4개 제시
+    final out = <Upgrade>[...evos];
+    for (final u in pool) {
+      if (out.length >= (evos.isNotEmpty ? 4 : 3)) break;
+      out.add(u);
+    }
+    choices = out;
   }
 
   void pick(Upgrade u) {
@@ -1145,6 +1257,25 @@ class WorldPainter extends CustomPainter {
             ..color = p.color.withOpacity(0.6 * a));
     }
 
+    // 벼락 (연쇄 선)
+    for (final l in w.lines) {
+      final a = (l.life / l.maxLife).clamp(0.0, 1.0);
+      canvas.drawLine(
+          Offset(l.x1, l.y1),
+          Offset(l.x2, l.y2),
+          Paint()
+            ..strokeWidth = 6
+            ..strokeCap = StrokeCap.round
+            ..color = l.color.withOpacity(0.18 * a));
+      canvas.drawLine(
+          Offset(l.x1, l.y1),
+          Offset(l.x2, l.y2),
+          Paint()
+            ..strokeWidth = 2
+            ..strokeCap = StrokeCap.round
+            ..color = l.color.withOpacity(0.95 * a));
+    }
+
     // 적
     for (final e in w.enemies) {
       _enemy(canvas, e);
@@ -1162,12 +1293,14 @@ class WorldPainter extends CustomPainter {
       _glow(canvas, b.x, b.y, b.radius * 0.7, P.goldSoft);
     }
 
-    // 회전 송곳니
+    // 회전 송곳니 (진화 시 더 많고 크게)
     if (w.fangLv > 0) {
-      final orad = 60 + w.fangLv * 4.0;
-      for (int i = 0; i < w.fangLv; i++) {
-        final a = w.orbitAngle + i * 6.2831853 / w.fangLv;
-        _glow(canvas, w.px + cos(a) * orad, w.py + sin(a) * orad, 6.0, P.cyan, core: 0.95);
+      final cnt = w.fangLv + (w.fangEvo ? 3 : 0);
+      final orad = (60 + w.fangLv * 4.0) * (w.fangEvo ? 1.4 : 1.0);
+      for (int i = 0; i < cnt; i++) {
+        final a = w.orbitAngle + i * 6.2831853 / cnt;
+        _glow(canvas, w.px + cos(a) * orad, w.py + sin(a) * orad,
+            w.fangEvo ? 8.0 : 6.0, P.cyan, core: 0.95);
       }
     }
 
