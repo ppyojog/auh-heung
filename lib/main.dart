@@ -1463,10 +1463,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               world.phase = GPhase.shop;
             }), dark: false),
         const SizedBox(height: 10),
-        _bigBtn(world.sfx.muted ? '🔇  소리 켜기' : '🔊  소리 끄기', P.panel,
-            () => setState(() => world.toggleMute()),
-            dark: false),
-        const SizedBox(height: 10),
         _bigBtn('🏳  포기하고 마치기', P.blood, () => setState(() => world.giveUp()), dark: false),
       ]),
     );
