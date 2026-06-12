@@ -291,7 +291,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, choice, dead, shop, menu, achieve }
+enum GPhase { title, playing, levelup, choice, dead, shop, menu, achieve, skins }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -326,6 +326,23 @@ const List<Ach> kAch = [
   Ach('boss1', '👹', '거수 사냥꾼', '보스 처치', 30),
   Ach('dev200', '🍖', '대식가', '한 판 200 포식', 30),
   Ach('surv180', '🏆', '살아있는 전설', '3분 생존', 40),
+];
+
+// 코스메틱 스킨 — 호랑이 색 변경(P2W 없음, 윤리적 수익화). 송곳니로 해금.
+class Skin {
+  final String id, name, icon;
+  final Color color;
+  final int cost;
+  const Skin(this.id, this.name, this.icon, this.color, this.cost);
+}
+
+const List<Skin> kSkins = [
+  Skin('default', '기본 (캐릭터색)', '🐯', Color(0x00000000), 0),
+  Skin('snow', '눈호랑이', '❄', Color(0xFFBFE8F5), 60),
+  Skin('shadow', '그림자 표범', '🌑', Color(0xFFB07CE0), 80),
+  Skin('ember', '잿불 맹수', '🔥', Color(0xFFE8702E), 80),
+  Skin('jade', '비취 야수', '🍃', Color(0xFF7FD08A), 110),
+  Skin('royal', '황금 폭군', '👑', Color(0xFFFFD54F), 160),
 ];
 
 // 타이니 선택 대화 — 난이도를 가르는 분기 (선택권은 주되 욕망으로 망할 수 있는 구조)
@@ -366,6 +383,35 @@ class World {
   final Set<String> achieved = {};
   final List<String> pendingAch = []; // 이번 사망에서 새로 달성한 것
   int runBoss = 0; // 이번 런 보스 처치 수
+  // 코스메틱 스킨
+  final Set<String> ownedSkins = {'default'};
+  String skin = 'default';
+  // 데일리 보너스
+  String lastDaily = '';
+  bool dailyJustClaimed = false;
+
+  Color get skinColor {
+    if (skin == 'default') return kChars[charIndex.clamp(0, kChars.length - 1)].color;
+    final s = kSkins.firstWhere((e) => e.id == skin, orElse: () => kSkins.first);
+    return s.id == 'default' ? kChars[charIndex.clamp(0, kChars.length - 1)].color : s.color;
+  }
+
+  bool buySkin(String id) {
+    final s = kSkins.firstWhere((e) => e.id == id);
+    if (ownedSkins.contains(id)) return false;
+    if (fangs < s.cost) return false;
+    fangs -= s.cost;
+    ownedSkins.add(id);
+    skin = id;
+    _saveMeta();
+    return true;
+  }
+
+  void selectSkin(String id) {
+    if (!ownedSkins.contains(id)) return;
+    skin = id;
+    _saveMeta();
+  }
   // 충신 herald (텍스트 대사 + 표정으로 톤 전달)
   String heraldLine = '';
   String heraldFace = '🐯';
@@ -531,6 +577,7 @@ class World {
     } catch (_) {}
     _loadRecords();
     _loadMeta();
+    _checkDaily();
   }
 
   // ── 파생 스탯 (캐릭터 배수 + 광폭화 + 영구 강화(meta) 반영) ──
@@ -1276,10 +1323,32 @@ class World {
     fangs = 0;
     meta.clear();
     achieved.clear();
+    ownedSkins
+      ..clear()
+      ..add('default');
+    skin = 'default';
+    lastDaily = '';
+    dailyJustClaimed = false;
     bestTime = 0;
     bestKills = 0;
     _loadRecords();
     _loadMeta();
+    _checkDaily();
+  }
+
+  // 데일리 보너스 — 하루 첫 접속 시 송곳니 +30 (리텐션, 비강제)
+  void _checkDaily() {
+    try {
+      final n = DateTime.now();
+      final today =
+          '${n.year}${n.month.toString().padLeft(2, '0')}${n.day.toString().padLeft(2, '0')}';
+      if (lastDaily != today) {
+        lastDaily = today;
+        fangs += 30;
+        dailyJustClaimed = true;
+        _saveMeta();
+      }
+    } catch (_) {}
   }
 
   // 슬롯 요약(없으면 null) — 타이틀 슬롯 선택용
@@ -1307,13 +1376,22 @@ class World {
       final m = (j['up'] as Map?) ?? {};
       m.forEach((k, v) => meta[k as String] = v as int);
       achieved.addAll(((j['ach'] as List?) ?? []).map((e) => e as String));
+      ownedSkins.addAll(((j['skins'] as List?) ?? []).map((e) => e as String));
+      skin = j['skin'] as String? ?? 'default';
+      lastDaily = j['daily'] as String? ?? '';
     } catch (_) {}
   }
 
   void _saveMeta() {
     try {
-      html.window.localStorage[_metaKey] =
-          jsonEncode({'fangs': fangs, 'up': meta, 'ach': achieved.toList()});
+      html.window.localStorage[_metaKey] = jsonEncode({
+        'fangs': fangs,
+        'up': meta,
+        'ach': achieved.toList(),
+        'skins': ownedSkins.toList(),
+        'skin': skin,
+        'daily': lastDaily,
+      });
     } catch (_) {}
   }
 
@@ -1420,6 +1498,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.shop) _shopOverlay(),
             if (world.phase == GPhase.achieve) _achieveOverlay(),
+            if (world.phase == GPhase.skins) _skinsOverlay(),
             if (world.phase == GPhase.menu) _menuOverlay(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.choice && world.tinyChoice != null) _choiceOverlay(),
@@ -1830,6 +1909,23 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           _bigBtn('🏆  업적  (${world.achieved.length}/${kAch.length})', P.panel,
               () => setState(() => world.phase = GPhase.achieve),
               dark: false),
+          const SizedBox(height: 10),
+          _bigBtn('🎀  스킨  (${world.ownedSkins.length}/${kSkins.length})', P.panel,
+              () => setState(() => world.phase = GPhase.skins),
+              dark: false),
+          if (world.dailyJustClaimed) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0x22E8A33D),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: P.gold.withOpacity(0.6)),
+              ),
+              child: const Text('🎁 오늘의 보너스 +30 🦷 받았습니다!',
+                  style: TextStyle(color: P.goldSoft, fontSize: 12.5, fontWeight: FontWeight.bold)),
+            ),
+          ],
           const SizedBox(height: 16),
         ]),
       ),
@@ -1921,6 +2017,99 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
             child: _bigBtn('← 돌아가기', P.panel,
                 () => setState(() => world.phase = world.shopReturn),
+                dark: false),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // ── 코스메틱 스킨 ──
+  Widget _skinsOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.82),
+      child: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
+            child: Row(children: [
+              const Text('🎀 스킨',
+                  style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              Text('보유 🦷 ${world.fangs}',
+                  style: const TextStyle(color: P.goldSoft, fontSize: 15, fontWeight: FontWeight.bold)),
+            ]),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+              children: kSkins.map((s) {
+                final owned = world.ownedSkins.contains(s.id);
+                final on = world.skin == s.id;
+                final swatch =
+                    s.id == 'default' ? kChars[world.charIndex.clamp(0, kChars.length - 1)].color : s.color;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 9),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: on ? P.gold.withOpacity(0.14) : P.panel,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: on ? P.gold : P.line, width: on ? 2 : 1),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: swatch,
+                          boxShadow: [BoxShadow(color: swatch.withOpacity(0.6), blurRadius: 8)],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text('${s.icon} ${s.name}',
+                            style: const TextStyle(
+                                color: P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
+                      ),
+                      SizedBox(
+                        width: 90,
+                        child: Material(
+                          color: on
+                              ? const Color(0xFF2A2018)
+                              : (owned ? P.green.withOpacity(0.85) : (world.fangs >= s.cost ? P.gold : const Color(0xFF2A2018))),
+                          borderRadius: BorderRadius.circular(10),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: on
+                                ? null
+                                : () => setState(
+                                    () => owned ? world.selectSkin(s.id) : world.buySkin(s.id)),
+                            child: Container(
+                              alignment: Alignment.center,
+                              padding: const EdgeInsets.symmetric(vertical: 11),
+                              child: Text(
+                                  on ? '착용 중' : (owned ? '착용' : '🦷${s.cost}'),
+                                  style: TextStyle(
+                                      color: on
+                                          ? P.muted
+                                          : (owned ? Colors.black : (world.fangs >= s.cost ? Colors.black : P.muted)),
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ]),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+            child: _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = GPhase.title),
                 dark: false),
           ),
         ]),
@@ -2433,7 +2622,7 @@ class WorldPainter extends CustomPainter {
     final hurt = w.contactCdView > 0;
     final id = w.charIndex.clamp(0, kChars.length - 1);
     final ch = kChars[id];
-    final col = hurt ? P.red : ch.color;
+    final col = hurt ? P.red : w.skinColor; // 코스메틱 스킨 색 적용
     final r = w.pr * w.growScale; // 포식할수록 시각적으로 커짐(히트박스는 w.pr 유지)
     final t = w.time;
     final moving = w.dirx != 0 || w.diry != 0;
