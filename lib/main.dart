@@ -399,7 +399,7 @@ class World {
     _heraldCd = 0.8;
   }
 
-  int get stage => 1 + (time ~/ 60).toInt();
+  int get stage => 1 + (time ~/ 45).toInt(); // 45초마다 +1, 계속 증가 → 성장/escalation 체감
 
   void openMenu() {
     if (phase == GPhase.playing) phase = GPhase.menu;
@@ -1281,24 +1281,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.choice && world.tinyChoice != null) _choiceOverlay(),
             if (world.phase == GPhase.dead) _death(),
-            // 음소거 토글 (좌하단)
-            Positioned(
-              left: 10,
-              bottom: 10,
-              child: Material(
-                color: Colors.black.withOpacity(0.4),
-                shape: const CircleBorder(),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: () => setState(() => world.toggleMute()),
-                  child: Padding(
-                    padding: const EdgeInsets.all(9),
-                    child: Text(world.sfx.muted ? '🔇' : '🔊',
-                        style: const TextStyle(fontSize: 18)),
-                  ),
-                ),
-              ),
-            ),
+            // (음소거는 타이니 메뉴로 이동)
           ]);
         }),
       ),
@@ -1322,7 +1305,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               const SizedBox(width: 6),
               _tag('Lv ${world.level}', color: P.gold),
               const SizedBox(width: 6),
-              _tag('⚔${world.threatLabel}', color: world.threatColor),
+              _tag('🌊 STAGE ${world.stage}', color: world.threatColor),
               const Spacer(),
               _tag('☠ ${world.kills}', color: P.red),
             ]),
@@ -1408,23 +1391,26 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ── 타이니 호출 버튼 (시리/빅스비식) — 누르면 메뉴(상점·난이도·설정) ──
+  // ── 타이니 호출 버튼 (시리/빅스비식) — 어흥 버튼 위(좌하단). 누르기 전 살짝 반투명 ──
   Widget _tinyCallButton() {
     return Positioned(
-      top: 72,
-      right: 10,
+      left: 34,
+      bottom: 110,
       child: GestureDetector(
         onTap: () => setState(() => world.openMenu()),
-        child: Container(
-          width: 46,
-          height: 46,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.black.withOpacity(0.45),
-            border: Border.all(color: P.gold.withOpacity(0.75), width: 1.5),
+        child: Opacity(
+          opacity: 0.62,
+          child: Container(
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.black.withOpacity(0.45),
+              border: Border.all(color: P.gold.withOpacity(0.75), width: 1.5),
+            ),
+            child: const Text('🐯', style: TextStyle(fontSize: 22)),
           ),
-          child: const Text('🐯', style: TextStyle(fontSize: 22)),
         ),
       ),
     );
@@ -1451,20 +1437,20 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ),
           child: Column(children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('현재 위협도', style: TextStyle(color: P.muted, fontSize: 12)),
-              Text('${world.threatLabel}  ${"★" * world.threatStars}',
-                  style: TextStyle(color: world.threatColor, fontSize: 14, fontWeight: FontWeight.bold)),
+              const Text('현재 스테이지', style: TextStyle(color: P.muted, fontSize: 12)),
+              Text('STAGE ${world.stage}',
+                  style: TextStyle(color: world.threatColor, fontSize: 16, fontWeight: FontWeight.bold)),
             ]),
             const SizedBox(height: 6),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
               const Text('적 강함', style: TextStyle(color: P.muted, fontSize: 12)),
               Text('×${world.diff.toStringAsFixed(2)}',
-                  style: const TextStyle(color: P.parch, fontSize: 13, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: world.threatColor, fontSize: 14, fontWeight: FontWeight.bold)),
             ]),
             const SizedBox(height: 6),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('스테이지 · 생존', style: TextStyle(color: P.muted, fontSize: 12)),
-              Text('${world.stage}단계 · ${World.mmss(world.time)}',
+              const Text('생존 · 처치', style: TextStyle(color: P.muted, fontSize: 12)),
+              Text('${World.mmss(world.time)} · ${world.kills}',
                   style: const TextStyle(color: P.parch, fontSize: 13, fontWeight: FontWeight.bold)),
             ]),
           ]),
@@ -1491,13 +1477,15 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     final frac = (world.rage / world.rageMax).clamp(0.0, 1.0);
     final ready = world.rageReady;
     return Positioned(
-      right: 18,
+      left: 18,
       bottom: 22,
       child: GestureDetector(
         onTap: () {
           if (ready) setState(() => world.unleashRoar());
         },
-        child: SizedBox(
+        child: Opacity(
+          opacity: ready ? 1.0 : 0.45, // 가득 차기 전엔 반투명, 차면 불투명
+          child: SizedBox(
           width: 78,
           height: 78,
           child: Stack(alignment: Alignment.center, children: [
@@ -1532,6 +1520,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                       fontWeight: FontWeight.bold)),
             ),
           ]),
+        ),
         ),
       ),
     );
@@ -2065,9 +2054,9 @@ class WorldPainter extends CustomPainter {
 
     canvas.restore();
 
-    // 방향키 — 하단 좌측 고정, 반투명. 노브는 현재 진행 방향을 반영. (플레이 중에만)
+    // 방향키 — 하단 우측 고정(오른손잡이), 반투명. 노브는 진행 방향 반영. (플레이 중에만)
     if (w.phase != GPhase.playing) return;
-    final jx = 74.0, jy = size.height - 78.0, baseR = 46.0;
+    final jx = size.width - 74.0, jy = size.height - 78.0, baseR = 46.0;
     canvas.drawCircle(Offset(jx, jy), baseR,
         Paint()..color = Colors.white.withOpacity(w.jActive ? 0.10 : 0.05));
     canvas.drawCircle(
