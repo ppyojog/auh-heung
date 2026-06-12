@@ -291,7 +291,16 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, dead }
+enum GPhase { title, playing, levelup, choice, dead }
+
+// 타이니 선택 대화 — 난이도를 가르는 분기 (선택권은 주되 욕망으로 망할 수 있는 구조)
+class TinyChoice {
+  final String prompt, leftLabel, leftSub, rightLabel, rightSub;
+  final void Function() onLeft;
+  final void Function() onRight;
+  TinyChoice(this.prompt, this.leftLabel, this.leftSub, this.onLeft, this.rightLabel,
+      this.rightSub, this.onRight);
+}
 
 // =============================================================================
 //  월드 / 게임 상태 + 업데이트 루프
@@ -317,6 +326,10 @@ class World {
   String heraldLine = '';
   double heraldT = 0, _heraldCd = 0, _lowCd = 0;
   int _streakKillMark = 0;
+  // 동적 난이도 (타이니 선택으로 변동) — 높을수록 적 강함 + XP·광기 획득 ↑(빠른 성장)
+  double diff = 1.0;
+  TinyChoice? tinyChoice;
+  double _choiceCd = 14, _advT = 48;
   int level = 1;
   double xp = 0, xpNext = 5;
   double orbitAngle = 0;
@@ -441,6 +454,10 @@ class World {
     _heraldCd = 0;
     _lowCd = 0;
     _streakKillMark = 0;
+    diff = 1.0;
+    tinyChoice = null;
+    _choiceCd = 14;
+    _advT = 48;
     jActive = false;
     dirx = diry = 0;
     _say(_pick(Tiny.greet), force: true);
@@ -467,6 +484,53 @@ class World {
     _shakeAdd(18);
     _hapticBig = true;
     sfx.play('boss');
+  }
+
+  // 적 일부 제거(후퇴 시 숨통) — 보스는 제외
+  void _thin(double frac) {
+    enemies.removeWhere((e) => e.type != EType.boss && rng.nextDouble() < frac);
+  }
+
+  void _offerRetreat() {
+    phase = GPhase.choice;
+    tinyChoice = TinyChoice(
+      '대장님, 여긴 좀 거셉니다. 2보 전진을 위한 1보 후퇴… 잠시 수월한 사냥터로 물러날까요?',
+      '🐾 잠시 물러난다', '난이도↓·체력 회복·숨통',
+      () {
+        diff = max(0.6, diff - 0.4);
+        hp = min(maxHp, hp + maxHp * 0.35);
+        _thin(0.55);
+        _say('현명하십니다. 호랑이는 물러설 때를 아는 법이죠.', force: true);
+      },
+      '🔥 계속 사냥한다', '그대로 — 위험하지만 멋짐',
+      () {
+        rage = min(rageMax, rage + rageMax * 0.3);
+        _say('크하핫—! 역시 호랑이답습니다, 물러섬을 모르는 분!', force: true);
+      },
+    );
+  }
+
+  void _offerAdvance() {
+    phase = GPhase.choice;
+    tinyChoice = TinyChoice(
+      '대장님껜 이 잡것들이 시시하시죠? 더 사나운 놈들의 둥지로 쳐들어가 볼까요?',
+      '🐅 더 사나운 곳으로', '성장↑·위험↑ (방심하면 한 입)',
+      () {
+        diff = min(2.2, diff + 0.45);
+        _say('이래야 사냥할 맛이 나죠! 단— 방심하면 한 입에 끝납니다.', force: true);
+      },
+      '🌿 천천히 간다', '변동 없음 — 신중',
+      () => _say('신중함도 맹수의 덕목이죠.', force: true),
+    );
+  }
+
+  void pickChoice(bool right) {
+    final c = tinyChoice;
+    if (c == null) return;
+    (right ? c.onRight : c.onLeft)();
+    tinyChoice = null;
+    _choiceCd = 32;
+    phase = GPhase.playing;
   }
 
   // ── 입력 ──
@@ -533,6 +597,19 @@ class World {
     if (kills - _streakKillMark >= 30) {
       _streakKillMark = kills;
       _say(_pick(Tiny.streak));
+    }
+    // 타이니 난이도 선택 제안 (쿨다운 기반)
+    if (_choiceCd > 0) _choiceCd -= dt;
+    if (_advT > 0) _advT -= dt;
+    if (_choiceCd <= 0) {
+      if (hp < maxHp * 0.32 && diff > 0.65) {
+        _offerRetreat();
+        return;
+      } else if (hp > maxHp * 0.6 && _advT <= 0 && diff < 2.0 && time > 40) {
+        _advT = 55;
+        _offerAdvance();
+        return;
+      }
     }
 
     // 이동
@@ -616,14 +693,14 @@ class World {
     } else if (time > 42 && roll < 0.32) {
       t = EType.fast;
     }
-    final base = 9 + time * 0.5;
+    final base = (9 + time * 0.5) * diff;
     Enemy e;
     if (t == EType.fast) {
-      e = Enemy(_eid++, x, y, base * 0.65, base * 0.65, 72 + time * 0.17, 4 + time * 0.03, 9, t);
+      e = Enemy(_eid++, x, y, base * 0.65, base * 0.65, 72 + time * 0.17, (4 + time * 0.03) * diff, 9, t);
     } else if (t == EType.tank) {
-      e = Enemy(_eid++, x, y, base * 3.0, base * 3.0, 30 + time * 0.05, 8.5 + time * 0.05, 18, t);
+      e = Enemy(_eid++, x, y, base * 3.0, base * 3.0, 30 + time * 0.05, (8.5 + time * 0.05) * diff, 18, t);
     } else {
-      e = Enemy(_eid++, x, y, base, base, 44 + time * 0.12, 4.5 + time * 0.03, 11, t);
+      e = Enemy(_eid++, x, y, base, base, 44 + time * 0.12, (4.5 + time * 0.03) * diff, 11, t);
     }
     enemies.add(e);
   }
@@ -631,8 +708,8 @@ class World {
   void _spawnBoss() {
     final x = px + (rng.nextBool() ? 1 : -1) * w * 0.5;
     final y = py + (rng.nextBool() ? 1 : -1) * h * 0.4;
-    final base = 240 + time * 6;
-    enemies.add(Enemy(_eid++, x.clamp(0.0, w), y.clamp(0.0, h), base, base, 40, 22 + time * 0.08, 30, EType.boss));
+    final base = (240 + time * 6) * diff;
+    enemies.add(Enemy(_eid++, x.clamp(0.0, w), y.clamp(0.0, h), base, base, 40, (22 + time * 0.08) * diff, 30, EType.boss));
     pulses.add(Pulse(px, py, 200, 0.6, P.blood));
     _float(px, py - 60, '⚠ 의회의 거대 맹수 강림', P.red, 18);
     _shakeAdd(12);
@@ -849,7 +926,7 @@ class World {
       if (e.hp <= 0 && !e.dead) {
         e.dead = true;
         kills += 1;
-        rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)));
+        rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)) * diff);
         if (e.type == EType.boss) {
           _float(e.x, e.y - e.radius, 'BOSS 격파!', P.gold, 18);
           _say(_pick(Tiny.boss), force: true);
@@ -892,7 +969,7 @@ class World {
           o.y += dy / d * pull * dt;
         }
         if (d < 16) {
-          xp += o.value;
+          xp += o.value * diff; // 난이도 높을수록 경험치 ↑(빠른 성장)
           o.dead = true;
           sfx.play('pick', gapMs: 35);
         }
@@ -1094,11 +1171,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 ),
               ),
             ),
-            if (world.phase == GPhase.playing || world.phase == GPhase.levelup) _hud(),
+            if (world.phase == GPhase.playing ||
+                world.phase == GPhase.levelup ||
+                world.phase == GPhase.choice) _hud(),
             if (world.phase == GPhase.playing) _rageButton(),
             if (world.phase == GPhase.playing && world.heraldT > 0) _heraldBubble(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.levelup) _levelUp(),
+            if (world.phase == GPhase.choice && world.tinyChoice != null) _choiceOverlay(),
             if (world.phase == GPhase.dead) _death(),
             // 음소거 토글 (좌하단)
             Positioned(
@@ -1383,6 +1463,56 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               child: _upgradeCard(u),
             )),
       ]),
+    );
+  }
+
+  // ── 타이니 난이도 선택 대화 ──
+  Widget _choiceOverlay() {
+    final c = world.tinyChoice!;
+    return Container(
+      color: Colors.black.withOpacity(0.78),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(22),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('🐯 타이니',
+            style: TextStyle(color: P.gold, fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Text(c.prompt,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: P.parch, fontSize: 15, height: 1.6)),
+        ),
+        const SizedBox(height: 20),
+        _choiceCard(c.leftLabel, c.leftSub, P.cyan, () => setState(() => world.pickChoice(false))),
+        const SizedBox(height: 12),
+        _choiceCard(c.rightLabel, c.rightSub, P.blood, () => setState(() => world.pickChoice(true))),
+      ]),
+    );
+  }
+
+  Widget _choiceCard(String label, String sub, Color color, VoidCallback onTap) {
+    return Material(
+      color: P.panel,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          width: 320,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: color.withOpacity(0.8), width: 1.5),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label,
+                style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 3),
+            Text(sub, style: const TextStyle(color: P.muted, fontSize: 12)),
+          ]),
+        ),
+      ),
     );
   }
 
