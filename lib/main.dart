@@ -88,6 +88,11 @@ class Cfg {
   // [게임성] 잭팟: 성공 시 8% 확률로 보상 2.5배 폭증
   static const double jackpotChance = 0.08;
   static const double jackpotMul = 2.5;
+  // [공정성] 숨은 연패 보호(Pity) — 표시되지 않는 자비. 실제 굴림에만 적용.
+  //  연속 실패가 쌓일수록 다음 운명의 눈에 보이지 않는 가호가 붙는다.
+  //  (XCOM식 정확한 % 노출의 '억까' 분노를 차단 · Fire Emblem식 체감 공정성)
+  static const int pityPerFail = 1; // 실패 1회당 숨은 보정 +1 (≈ +5%p)
+  static const int pityMax = 4; // 최대 +4 (≈ +20%p)까지 누적
   // [게임성] 다회차 유산(메타 성장) — 클리어/패배 시 다음 회차 영구 보너스
   static const int legacyStatClear = 2, legacyGoldClear = 20000;
   static const int legacyStatLose = 1, legacyGoldLose = 5000;
@@ -404,7 +409,7 @@ const Map<String, Region> kRegions = {
       hunts: [
         HuntTarget('하이에나 무리', TribeStat.leather, 16, 26000, 240, -7000,
             statLose: {TribeStat.leather: -2}),
-        HuntTarget('부도 부족 잔당', TribeStat.influence, 17, 30000, 280, -8000),
+        HuntTarget('몰락한 부족 잔당', TribeStat.influence, 17, 30000, 280, -8000),
         HuntTarget('잿더미 도굴꾼 무리', TribeStat.wildness, 17, 28000, 250, -7500),
         HuntTarget('굶주린 평원 늑대왕', TribeStat.leather, 18, 34000, 300, -9000,
             statLose: {TribeStat.wildness: -1}),
@@ -463,7 +468,7 @@ const Map<String, TitleDef> kTitles = {
   'ACH_001': TitleDef('ACH_001', '매복의 군주', '광기의 불나방', 'C형 성공 보상 +5% · (장착) C형 DC -2'),
   'ACH_002': TitleDef('ACH_002', '불패의 가죽', '대륙의 철벽 맷집', '매 턴 고정 유지비 -10%'),
   'ACH_003': TitleDef('ACH_003', '흑요석 가도의 호랑이', '보이지 않는 손의 총아', '경계 점수 상시 +100 · (장착) B형 DC -3'),
-  'ACH_004': TitleDef('ACH_004', '기생초', '대륙의 몰락자', '4등급 빚 조공 누적 할증 -5%'),
+  'ACH_004': TitleDef('ACH_004', '기생초', '대륙의 몰락자', '4등급 빚 조공 누적 가중 -5%'),
   'ACH_BOSS': TitleDef('ACH_BOSS', '대륙의 절대 포식자', '진 보스 격파', '의장 네오 맹수 격파의 증표'),
 };
 
@@ -481,7 +486,7 @@ class NewsDef {
 const List<NewsDef> kNews = [
   NewsDef('NS_003', '원시 꿀송이 신기루 붕괴', 2, '암시장 장비 값이 30% 주저앉음',
       TribeStat.wildness, 13, '권세 이득 +10,000 스톤'),
-  NewsDef('NS_001', '그림자 의회의 기습 피의 조공 인상', 3, '다음 3턴 빚 조공율 2배 할증',
+  NewsDef('NS_001', '그림자 의회의 기습 피의 조공 인상', 3, '다음 3턴 빚 조공이 2배로 불어남',
       TribeStat.leather, 15, '유지비 30% 감면(즉시 1턴)'),
   NewsDef('NS_004', '의회 내부자의 기밀 유출', 5, '다음 1턴 A·C형 요구 DC -3 경감',
       null, 0, '글로벌 보너스 버프 작동'),
@@ -515,7 +520,7 @@ class Teach {
     '어젯밤 그림자 의회의 집행관이 둥지를 불태우고 전리품을 끌고 갔습니다. 살아남은 건 대장님과 저뿐.',
     '심장이 아직 뜁니다. 그 뜻은 하나 — 복수. 빼앗긴 모든 것을, 그 위에 의회 의장의 머리까지.',
     '목표는 흑요석 왕좌. 남쪽 계곡부터 짓밟고 올라가 의회를 찢어발기는 겁니다.',
-    '길을 고르고 운명의 주사위를 굴리십시오. 요구치(DC)를 넘으면 전리품이 쏟아집니다. (% 가 높을수록 안전)',
+    '길을 고르고 운명의 주사위를 굴리십시오. 숫자는 믿지 마십시오 — 대장님의 본능이 읽는 직감(차오른 칸이 많을수록 발톱이 먼저 닿습니다)만이 진실입니다.',
     '첫 사냥감이 코앞입니다. 별빛이 앉은 길… 제 코는 거기서 피 냄새를 맡는군요. 가시죠, 대장님.',
   ];
   static const String credit =
@@ -765,7 +770,7 @@ class GameScript {
           goldFail: -2000, statFail: {TribeStat.influence: -2}),
         GameOption(type: ChoiceType.shortSale,
           successText: '전설적인 대정리의 날입니다! 매복 계약이 만개합니다.',
-          failText: '위험 맷집이 버티지 못했습니다! 금령로 계약이 무효화됩니다.',
+          failText: '위험 맷집이 버티지 못했습니다! 의회의 금령에 약속이 짓밟힙니다.',
           goldSuccess: 25000, expSuccess: 500, itemReward: '신화 무기 해금',
           goldFail: -15000, statFail: {TribeStat.leather: -5}),
       ]),
@@ -773,7 +778,7 @@ class GameScript {
       mainText: '무너진 거상 부족이 몰락을 선언했습니다. 무리 이탈 사태가 대륙을 덮칩니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
-          successText: '포식자의 약탈이 통했습니다! 부도 영토를 헐값에 집어삼킵니다.',
+          successText: '포식자의 약탈이 통했습니다! 무너진 영토를 헐값에 집어삼킵니다.',
           failText: '타이밍이 일렀습니다. 숨겨진 빚더미가 연쇄로 터집니다.',
           goldSuccess: 6000, expSuccess: 220, itemReward: '희귀 문서',
           goldFail: -4000, statFail: {TribeStat.wildness: -2}),
@@ -784,7 +789,7 @@ class GameScript {
           goldFail: -2500, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
           successText: '차가운 송곳니가 흑막을 뚫었습니다! 매복이 만료 마무리됩니다.',
-          failText: '의회의 기습 의회의 거짓 사면 선언으로 강제 정리당합니다.',
+          failText: '의회가 기습 거짓 사면을 선언하며 대장님의 송곳니를 강제로 거둬들입니다.',
           goldSuccess: 18000, expSuccess: 400, itemReward: '고대 무기',
           goldFail: -12000, statFail: {TribeStat.leather: -4}),
       ]),
@@ -792,7 +797,7 @@ class GameScript {
       mainText: '중앙 의회가 무제한으로 공짜 마나를 살포하겠다고 선언했습니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
-          successText: '트렌드를 관통했습니다! 지원금을 끌어와 희귀 원석을 선점합니다.',
+          successText: '시류를 꿰뚫었습니다! 의회의 살포물을 가로채 희귀 원석을 선점합니다.',
           failText: '타이밍을 놓쳤습니다! 경쟁하느라 헛돈만 날립니다.',
           goldSuccess: 8000, expSuccess: 250,
           goldFail: -3000, statFail: {TribeStat.wildness: -2}),
@@ -803,11 +808,11 @@ class GameScript {
           goldFail: -2000, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
           successText: '의회의 오판을 징벌했습니다! 와해를 정확히 저격합니다.',
-          failText: '금령에 막혔습니다! 약탈 정지로 전리품이 동결됩니다.',
+          failText: '금령에 막혔습니다! 길목이 막히고 전리품이 꽁꽁 얼어붙습니다.',
           goldSuccess: 20000, expSuccess: 450, itemReward: '고대 무기',
           goldFail: -14000, statFail: {TribeStat.leather: -5}),
       ]),
-    GameEvent(id: 'SCR_006', chapter: 2, title: '06. 구조조정의 칼바람',
+    GameEvent(id: 'SCR_006', chapter: 2, title: '06. 군식구 정리의 칼바람',
       mainText: '부족의 유지비를 갉아먹는 거대 전투수들을 어찌할지 결단할 때입니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
@@ -816,13 +821,13 @@ class GameScript {
           goldSuccess: 10000, expSuccess: 280,
           goldFail: -6000, statFail: {TribeStat.wildness: -3}),
         GameOption(type: ChoiceType.conservative,
-          successText: '현명한 슬림화! 전투수를 방출해 고정비를 줄입니다.',
+          successText: '현명한 솎아내기! 군식구 전투수를 내쫓아 유지비를 줄입니다.',
           failText: '정리 타이밍을 놓쳤습니다! 유지비가 금고를 파먹습니다.',
           goldSuccess: 5500, expSuccess: 220, itemReward: '희귀 문서',
           goldFail: -3500, statFail: {TribeStat.influence: -2}),
         GameOption(type: ChoiceType.shortSale,
-          successText: '탐욕스러운 포식 완수! 부도 전리품을 압도적 맷집으로 흡수합니다.',
-          failText: '맷집 한계 초과! 독소 조항이 터집니다.',
+          successText: '탐욕스러운 포식 완수! 무너진 부족의 전리품을 압도적 맷집으로 흡수합니다.',
+          failText: '맷집 한계 초과! 적이 숨겨둔 독니 함정이 터집니다.',
           goldSuccess: 22000, expSuccess: 500, itemReward: '고대 무기',
           goldFail: -16000, statFail: {TribeStat.leather: -5}, creditFail: -1),
       ]),
@@ -836,7 +841,7 @@ class GameScript {
           goldFail: -5000, statFail: {TribeStat.wildness: -3}),
         GameOption(type: ChoiceType.conservative,
           successText: '안목의 승리! 또렷한 인장을 지닌 강한 부족만 가려 키웁니다.',
-          failText: '가짜 검증에 속아 사기꾼 부족에게 예산을 기부합니다.',
+          failText: '가짜에 속아 사기꾼 부족에게 전리품을 고스란히 갖다 바칩니다.',
           goldSuccess: 6000, expSuccess: 250, itemReward: '희귀 돋보기',
           goldFail: -3000, statFail: {TribeStat.influence: -2}),
         GameOption(type: ChoiceType.shortSale,
@@ -845,27 +850,27 @@ class GameScript {
           goldSuccess: 24000, expSuccess: 550, itemReward: '고대 무기',
           goldFail: -18000, statFail: {TribeStat.leather: -5}, creditFail: -1),
       ]),
-    GameEvent(id: 'SCR_008', chapter: 3, title: '08. 트렌드의 지배자',
-      mainText: '대륙 통신망 플랫폼을 구축하는 독점 주도권 전쟁이 벌어집니다.',
+    GameEvent(id: 'SCR_008', chapter: 3, title: '08. 시류의 지배자',
+      mainText: '대륙의 봉화망을 한 손에 거머쥐려는 패권 전쟁이 벌어집니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
-          successText: '거대 플랫폼 주인 등극! 경쟁 부족을 치킨게임으로 몰락시킵니다.',
+          successText: '거대 봉화망의 주인 등극! 경쟁 부족을 끝장 승부로 몰락시킵니다.',
           failText: '과도한 빚에 짓눌려 매달 돌아오는 조공에 비틀거립니다.',
           goldSuccess: 15000, expSuccess: 350, itemReward: '일반 부츠',
           goldFail: -6500, statFail: {TribeStat.wildness: -3}, creditFail: -1),
         GameOption(type: ChoiceType.conservative,
           successText: '완벽한 설계! 보안 표준을 제정하고 통행세를 징수합니다.',
-          failText: '금령의 덫! 독점 금지 소송에 휘말려 비용을 쏟습니다.',
+          failText: '금령의 덫! 의회의 견제 재판에 휘말려 헛돈을 쏟습니다.',
           goldSuccess: 8000, expSuccess: 280, itemReward: '희귀 돋보기',
           goldFail: -4000, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
           successText: '독점의 숨통을 끊음! 취약점을 간파해 마비시킵니다.',
-          failText: '독점 권력의 보복! 역추적당해 계정이 동결됩니다.',
+          failText: '독점 권력의 보복! 역으로 추적당해 모든 길목이 봉쇄됩니다.',
           goldSuccess: 28000, expSuccess: 600, itemReward: '고대 무기',
           goldFail: -20000, statFail: {TribeStat.leather: -5}),
       ]),
-    GameEvent(id: 'SCR_009', chapter: 3, title: '09. 프로토콜 신기루의 종말',
-      mainText: '신기술 부족들의 금고가 바닥났습니다. 연쇄 바닥 추락로 신기루가 붕괴합니다.',
+    GameEvent(id: 'SCR_009', chapter: 3, title: '09. 주술 신기루의 종말',
+      mainText: '신기술 부족들의 금고가 바닥났습니다. 연쇄 추락 속에 신기루가 무너져 내립니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
           successText: '진정한 안목! 모두가 겁에 질려 내던질 때 뚝심으로 주워 담습니다.',
@@ -879,15 +884,15 @@ class GameScript {
           goldFail: -5000, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
           successText: '역사적 대포식! 와해의 밑바닥에서 매복을 완벽히 끝냅니다.',
-          failText: '시스템 농간! 의회가 매복을 전면 금지해 먹잇감를 몰수합니다.',
+          failText: '의회의 농간! 매복을 전면 금지하고 대장님의 먹잇감을 빼앗아 갑니다.',
           goldSuccess: 35000, expSuccess: 700, itemReward: '고대 무기',
           goldFail: -22000, statFail: {TribeStat.leather: -5}, creditFail: -1),
       ]),
     GameEvent(id: 'SCR_010', chapter: 4, title: '10. 그림자 의회의 전면전',
-      mainText: '흑막 그림자 의회가 전면 전리품 동결과 판 조작을 개시했습니다. 대륙의 명운을 건 전면전입니다.',
+      mainText: '흑막 그림자 의회가 전면 전리품 봉쇄와 판 조작을 개시했습니다. 대륙의 명운을 건 전면전입니다.',
       options: [
         GameOption(type: ChoiceType.aggressive,
-          successText: '맹수의 역습 성공! 의회 비밀 금고를 직접 타격해 동결을 해제합니다.',
+          successText: '맹수의 역습 성공! 의회 비밀 금고를 직접 들이쳐 봉쇄를 풀어버립니다.',
           failText: '권세의 요새 정예 용병단의 반격에 전투수들이 궤멸합니다.',
           goldSuccess: 25000, expSuccess: 500, itemReward: '신화 왕관 해금',
           goldFail: -12000, statFail: {TribeStat.wildness: -4}),
@@ -916,7 +921,7 @@ class GameScript {
           goldSuccess: 10000, expSuccess: 450,
           goldFail: -5000, statFail: {TribeStat.influence: -3}),
         GameOption(type: ChoiceType.shortSale,
-          successText: "전설적인 '대역습'의 완성! 마지막 한 수이 정점에서 폭발하며 신의 반열에 오릅니다.",
+          successText: "전설적인 '대역습'의 완성! 마지막 한 수가 정점에서 폭발하며 신의 반열에 오릅니다.",
           failText: '의회가 초법적 전면 봉문을 감행하며 금고가 완전히 몰락합니다.',
           goldSuccess: 60000, expSuccess: 900, itemReward: '신화 반지 즉시 지급',
           goldFail: -35000, statFail: {TribeStat.leather: -6}, creditFail: -1),
@@ -1192,6 +1197,21 @@ class PlayerState {
 }
 
 // =============================================================================
+//  [직감] 정확한 확률(%)·요구치(DC)를 절대 숫자로 보여주지 않는다.
+//   대신 부족장의 '본능'이 읽는 5단계 등급으로만 위험을 전한다.
+//   (XCOM식 숫자 노출이 부른 '억까' 분노를 차단 — Fire Emblem식 체감 설계)
+// =============================================================================
+class InstinctRead {
+  final int level; // 0(도박) ~ 4(압도적)
+  final String label; // 짧은 등급명
+  final Color color;
+  final int bars; // 본능 게이지 채울 칸수 1~5
+  final String omenLine; // 한 줄 직감 문구
+  const InstinctRead(this.level, this.label, this.color, this.bars, this.omenLine);
+  static const int totalBars = 5;
+}
+
+// =============================================================================
 //  [State] 단일화면 게임 매니저
 // =============================================================================
 class GameManager extends ChangeNotifier {
@@ -1216,6 +1236,8 @@ class GameManager extends ChangeNotifier {
   bool critBanner = false;
   String critText = '';
   bool screenShake = false;
+  int shakeMag = 0; // [연출] 흔들림 강도 0=없음/1=약함/2=강함 (보상 크기·연승에 비례)
+  bool bigWin = false; // [연출] 황금 섬광을 터뜨릴 '큰 한 방'인가 (대성공·잭팟·컴백·연승)
   String domainShown = '원시 부족';
 
   // 사냥/상점
@@ -1240,6 +1262,12 @@ class GameManager extends ChangeNotifier {
   int playthrough = 1; // 1회차 동안 풀가이드, 2회차부터 자유
   bool lastWasFail = false; // 직전 판정 실패 여부(컴백 감지)
   int successStreak = 0; // 연속 성공 횟수
+  int _failStreak = 0; // [공정성] 연속 실패 횟수(숨은 연패 보호용 · UI 비노출)
+
+  // ── 전조(Omen): 사건마다 무작위로 깃드는 하늘의 징조. 이번 판정에만 적용. ──
+  String omenText = '';
+  int omenDcMod = 0; // 요구치 가감(+면 불리)
+  double omenRewardMul = 1.0; // 성공 보상 배수
 
   // ── 타이니 포커스 게이트 (타이니가 화면을 잡고 단독 발화) ──
   //  [온보딩] 순차 대사 큐 — 프롤로그/기능 개방 설명을 한 장씩 넘기며 보여준다.
@@ -1317,9 +1345,10 @@ class GameManager extends ChangeNotifier {
     metaGoldBonus = 0;
     legacyNote = '';
     bossDone = false;
-    domainShown = '원시 부족';
     lastWasFail = false;
     successStreak = 0;
+    _failStreak = 0;
+    domainShown = '원시 부족';
     _loading = false;
     beginAdventure();
   }
@@ -1465,7 +1494,12 @@ class GameManager extends ChangeNotifier {
     }
     // [유물] 포식자의 직감: 모든 판정 +N
     final extra = levelBonus(_state.level) + relicSum(RelicFx.dice).toInt();
-    final finalVal = eff + statMod + extra;
+    // [공정성] 숨은 연패 보호: 실제 굴림(forcedRaw==null)에만 적용.
+    //  확률 계산(successChance, forcedRaw 지정)에는 절대 반영하지 않는다
+    //  → 화면에 '느껴지는 직감'보다 실제 운이 살짝 더 자비롭게 흐른다(억까 방지).
+    final int pity =
+        forcedRaw == null ? (_failStreak * Cfg.pityPerFail).clamp(0, Cfg.pityMax) : 0;
+    final finalVal = eff + statMod + extra + pity;
     DiceOutcome outcome;
     double mul;
     if (!hyper && raw == Cfg.critFail) {
@@ -1484,8 +1518,36 @@ class GameManager extends ChangeNotifier {
       outcome = DiceOutcome.failure;
       mul = 1.0;
     }
+    // [공정성] 실제 굴림에서만 연패 카운터 갱신 — 모든 판정 경로(사건/사냥/뉴스/보스) 공통.
+    if (forcedRaw == null) {
+      _failStreak = outcome.isSuccess ? 0 : (_failStreak + 1);
+    }
     return DiceResult(raw, eff, statMod, extra, finalVal, dc, outcome, mul,
         hyper && eff != afterMythic, mythicApplied);
+  }
+
+  // [직감] 내부 승률을 5단계 본능 등급으로 환산한다. 숫자는 화면에 절대 나가지 않는다.
+  //  연패 보호(pity)는 일부러 빼고 '기본 운'으로 읽어 → 실제 굴림이 직감보다 살짝 더 자비롭다.
+  InstinctRead instinctRead(ChoiceType type, int dc) {
+    final c = successChance(type, dc);
+    if (c >= 80) {
+      return const InstinctRead(4, '압도적', Color(0xFF6FCF73), 5,
+          '발톱이 먼저 닿을 자리. 사냥감이 이미 떨고 있습니다.');
+    }
+    if (c >= 60) {
+      return const InstinctRead(3, '우세', Color(0xFF9CCC65), 4,
+          '바람이 등을 밀어줍니다. 해볼 만한 싸움입니다.');
+    }
+    if (c >= 40) {
+      return const InstinctRead(2, '팽팽', Color(0xFFE8C34A), 3,
+          '숨을 고를 자리. 한 끗이 승패를 가릅니다.');
+    }
+    if (c >= 20) {
+      return const InstinctRead(1, '피냄새', Color(0xFFE39A4A), 2,
+          '피냄새가 짙습니다. 발을 잘못 디디면 되레 물어뜯깁니다.');
+    }
+    return const InstinctRead(0, '도박', Color(0xFFE05A4A), 1,
+        '목을 건 한 수. 하늘이 도와야 살아남습니다.');
   }
 
   int successChance(ChoiceType type, int dc) {
@@ -1615,8 +1677,42 @@ class GameManager extends ChangeNotifier {
     if (!keepTiny) {
       tinyLine = tutorialActive ? _pick(Tiny.guide) : _pick(Tiny.storyIntro);
     }
+    // [전조] 이번 사건에 깃든 하늘의 징조를 무작위로 결정.
+    _rollOmen();
     // [온보딩] 새 기능 개방 + 맥락 학습 대사를 포커스 큐에 적재(1회차 한정).
     _maybeTeach(id);
+  }
+
+  // 사건마다 35% 확률로 전조가 깃든다(1회차 제외). 이번 판정에만 적용.
+  void _rollOmen() {
+    omenText = '';
+    omenDcMod = 0;
+    omenRewardMul = 1.0;
+    if (tutorialActive) return; // 1회차는 학습 집중 — 변수 없음
+    if (_random.nextDouble() >= 0.35) return;
+    switch (_random.nextInt(5)) {
+      case 0:
+        omenText = '🌑 그믐의 가호 — 어둠이 발톱을 가립니다 (요구치 -2)';
+        omenDcMod = -2;
+        break;
+      case 1:
+        omenText = '🩸 피냄새가 진동한다 — 사냥감이 겁에 질립니다 (전리품 ×1.25)';
+        omenRewardMul = 1.25;
+        break;
+      case 2:
+        omenText = '🌪 사나운 바람 — 거칠지만 큰 한탕 (요구치 +2 · 전리품 ×1.35)';
+        omenDcMod = 2;
+        omenRewardMul = 1.35;
+        break;
+      case 3:
+        omenText = '🐦‍⬛ 까마귀의 경고 — 불길한 그림자가 드리웁니다 (요구치 +2)';
+        omenDcMod = 2;
+        break;
+      default:
+        omenText = '✨ 행운의 별 — 별이 대장님 편에 섰습니다 (요구치 -2 · 전리품 ×1.15)';
+        omenDcMod = -2;
+        omenRewardMul = 1.15;
+    }
   }
 
   // 다음 사건 자동 로드 (지역 메뉴 없이 끊김없이)
@@ -1663,7 +1759,7 @@ class GameManager extends ChangeNotifier {
   // ===========================================================================
   //  퀘스트 선택
   // ===========================================================================
-  void choose(GameOption opt) {
+  void choose(GameOption opt, {int stance = 1}) {
     if (_busy || activeEvent == null) return;
     _busy = true;
     flashes.clear();
@@ -1672,6 +1768,8 @@ class GameManager extends ChangeNotifier {
     goldBefore = _state.bloodGold;
     critBanner = false;
     screenShake = false;
+    shakeMag = 0;
+    bigWin = false;
     try {
       final ev = activeEvent!;
       if (opt.isEnding) {
@@ -1698,7 +1796,11 @@ class GameManager extends ChangeNotifier {
         _stage = Stage.resolution;
         return;
       }
-      final dc = dcFor(opt.type, ev.chapter);
+      // [태세] 신중(0): 요구치 -3(성공↑)·보상↓ / 정면(1): 그대로 / 과감(2): 요구치 +3(성공↓)·보상↑
+      // [전조] omenDcMod 가감까지 합산
+      final dc = dcFor(opt.type, ev.chapter) +
+          (stance == 0 ? -3 : (stance == 2 ? 3 : 0)) +
+          omenDcMod;
       final r = _resolve(opt.type, dc);
       lastResult = r;
       lastOption = opt;
@@ -1739,6 +1841,10 @@ class GameManager extends ChangeNotifier {
           mul *= Cfg.rewardVarMin +
               _random.nextDouble() * (Cfg.rewardVarMax - Cfg.rewardVarMin);
         }
+        // [태세] 보상 보정: 신중 0.8배 / 정면 1.0배 / 과감 1.4배
+        mul *= (stance == 0 ? 0.8 : (stance == 2 ? 1.4 : 1.0));
+        // [전조] 보상 보정
+        mul *= omenRewardMul;
         gd = (opt.goldSuccess * mul).round();
         if (jackpot) flashes.add('🎰 잭팟 대박!! 보상이 폭증했습니다!');
         xd = (opt.expSuccess * r.payoutMul).round();
@@ -1767,26 +1873,47 @@ class GameManager extends ChangeNotifier {
           tinyLine = _pick(Tiny.comeback);
           critBanner = true;
           screenShake = true;
+          shakeMag = 2;
+          bigWin = true;
           critText = '🔥[오뚝이 부활]🔥 넘어졌던 맹수가 더 사납게 일어나 모든 걸 뒤집었습니다!';
         } else if (jackpot) {
           tinyLine = _pick(Tiny.jackpot);
           critBanner = true;
           screenShake = true;
+          shakeMag = 2;
+          bigWin = true;
           critText = '🎰[대박 잭팟]🎰 하늘이 대장님께 황금 비를 퍼붓습니다!!';
         } else if (crit) {
           tinyLine = Tiny.critical;
           critBanner = true;
           screenShake = true;
+          shakeMag = 2;
+          bigWin = true;
           critText = '⚡[대륙 속보]⚡ 대성공! 대장님이 단숨에 대부호의 반열에 올랐습니다!';
         } else if (opt.type == ChoiceType.transcend) {
           tinyLine = Tiny.success[ChoiceType.transcend]!;
           critBanner = true;
           screenShake = true;
+          shakeMag = 2;
+          bigWin = true;
           critText = '⚡[대륙 속보]⚡ 부족장님이 초월의 경지에 올라 의회를 무릎 꿇렸습니다!';
         } else if (successStreak >= 3) {
-          tinyLine = _pick(Tiny.streak); // 일반 연승: 대사만, 전광판 X
+          tinyLine = _pick(Tiny.streak);
+          // [연출] 연승 고조: 3·5·7…연승마다 전광판으로 뽕을 끌어올린다(매 턴 도배는 방지).
+          if (successStreak == 3 || successStreak == 5 || successStreak >= 7) {
+            critBanner = true;
+            screenShake = true;
+            shakeMag = 2;
+            bigWin = true;
+            critText = '🔥[$successStreak연승 — 멈추지 않는 사냥]🔥 대장님의 발끝마다 부족이 무너집니다!';
+          }
         } else {
           tinyLine = Tiny.success[opt.type] ?? Tiny.success[ChoiceType.aggressive]!;
+          // [연출] 큰 한 방의 평타도 가볍게 흔들어 손맛을 준다(과용 방지: 약한 흔들림만).
+          if (gd >= 12000) {
+            screenShake = true;
+            shakeMag = 1;
+          }
         }
       } else {
         gd = (opt.goldFail * r.payoutMul).round();
@@ -1890,7 +2017,7 @@ class GameManager extends ChangeNotifier {
         creditScore: _state.creditScore - Cfg.delinquencyCreditPenalty,
         delinquentStreak: _state.delinquentStreak + 1,
       );
-      flashes.add('🩸 연체! 경계 -${Cfg.delinquencyCreditPenalty}');
+      flashes.add('🩸 조공 미납! 경계 -${Cfg.delinquencyCreditPenalty}');
       if (_state.delinquentStreak >= Cfg.marginCallStreak ||
           _state.creditGrade >= 4) _marginCall();
     } else {
@@ -1948,6 +2075,8 @@ class GameManager extends ChangeNotifier {
     goldBefore = _state.bloodGold;
     critBanner = false;
     screenShake = false;
+    shakeMag = 0;
+    bigWin = false;
     _overlay = Overlay.none;
     try {
       final r = _resolve(_typeForStat(t.stat), t.dc);
@@ -1989,19 +2118,32 @@ class GameManager extends ChangeNotifier {
           tinyLine = _pick(Tiny.comeback);
           critBanner = true;
           screenShake = true;
+          shakeMag = 2;
+          bigWin = true;
           critText = '🔥[오뚝이 부활]🔥 다친 발톱으로 더 큰 사냥감을 물어뜯었습니다!';
         } else if (jackpot) {
           tinyLine = _pick(Tiny.jackpot);
           critBanner = true;
           screenShake = true;
+          shakeMag = 2;
+          bigWin = true;
           critText = '🎰[대박 잭팟]🎰 사냥감 뱃속에서 황금이 쏟아집니다!!';
         } else if (crit) {
           tinyLine = Tiny.critical;
           critBanner = true;
           screenShake = true;
+          shakeMag = 2;
+          bigWin = true;
           critText = '⚡[대륙 속보]⚡ 부족장님의 사냥 한 방에 대륙이 진동합니다!';
         } else if (successStreak >= 3) {
           tinyLine = _pick(Tiny.streak);
+          if (successStreak == 3 || successStreak == 5 || successStreak >= 7) {
+            critBanner = true;
+            screenShake = true;
+            shakeMag = 2;
+            bigWin = true;
+            critText = '🔥[$successStreak연승 — 멈추지 않는 사냥]🔥 사냥터가 대장님의 이름을 떱니다!';
+          }
         } else {
           tinyLine = Tiny.huntWin;
         }
@@ -2163,8 +2305,8 @@ class GameManager extends ChangeNotifier {
         final r = _resolve(_typeForStat(n.respondStat!), n.respondDc);
         final defended = r.outcome.isSuccess;
         newsResolveText = defended
-            ? '🟢 대응 성공 (${r.finalValue} vs DC ${n.respondDc}) — ${n.successDesc}'
-            : '🔴 대응 실패 (${r.finalValue} vs DC ${n.respondDc}) — 악재 적중.';
+            ? '🟢 대응 성공 (운명의 눈 ${r.rawRoll}) — ${n.successDesc}'
+            : '🔴 대응 실패 (운명의 눈 ${r.rawRoll}) — 악재 적중.';
         if (n.code == 'NS_002' && !defended) {
           final cut = (_state.bloodGold * 0.15).round();
           _state =
@@ -2220,9 +2362,9 @@ class GameManager extends ChangeNotifier {
       final r = _resolve(_typeForStat(p.stat), p.dc);
       bossLastResult = r;
       if (r.outcome.isSuccess) {
-        bossNarrative = '${p.name} 돌파! (${r.finalValue} vs DC ${p.dc})';
+        bossNarrative = '${p.name} 돌파! (운명의 눈 ${r.rawRoll})';
       } else {
-        bossNarrative = '${p.name} 피격! (${r.finalValue} vs DC ${p.dc}) — ${p.penalty}';
+        bossNarrative = '${p.name} 피격! (운명의 눈 ${r.rawRoll}) — ${p.penalty}';
         if (bossPhaseIndex == 0) {
           _state =
               _state.copyWith(bloodGold: _clampGold(_state.bloodGold - 20000));
@@ -2479,6 +2621,8 @@ class GameManager extends ChangeNotifier {
     critBanner = false;
     critText = '';
     screenShake = false;
+    shakeMag = 0;
+    bigWin = false;
     domainShown = '원시 부족';
     lastHunt = null;
     shopFlash = '';
@@ -2943,7 +3087,8 @@ class _CritBannerState extends State<CritBanner> with SingleTickerProviderStateM
 class Shaker extends StatefulWidget {
   final Widget child;
   final bool shake;
-  const Shaker({super.key, required this.child, required this.shake});
+  final int intensity; // 1=약함 / 2=강함 (보상 크기·연승에 비례)
+  const Shaker({super.key, required this.child, required this.shake, this.intensity = 1});
   @override
   State<Shaker> createState() => _ShakerState();
 }
@@ -2971,11 +3116,17 @@ class _ShakerState extends State<Shaker> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    // [연출] 강도 2는 진폭↑·세로 흔들림까지 더해 '큰 한 방'의 손맛을 키운다.
+    final strong = widget.intensity >= 2;
+    final amp = strong ? 16.0 : 8.0;
+    final freq = strong ? 10.0 : 8.0;
     return AnimatedBuilder(
       animation: _c,
       builder: (_, child) {
-        final dx = sin(_c.value * pi * 8) * 9 * (1 - _c.value);
-        return Transform.translate(offset: Offset(dx, 0), child: child);
+        final decay = 1 - _c.value;
+        final dx = sin(_c.value * pi * freq) * amp * decay;
+        final dy = strong ? cos(_c.value * pi * freq * 0.7) * amp * 0.4 * decay : 0.0;
+        return Transform.translate(offset: Offset(dx, dy), child: child);
       },
       child: widget.child,
     );
@@ -2983,7 +3134,8 @@ class _ShakerState extends State<Shaker> with SingleTickerProviderStateMixin {
 }
 
 class GoldFlash extends StatefulWidget {
-  const GoldFlash({super.key});
+  final bool strong;
+  const GoldFlash({super.key, this.strong = false});
   @override
   State<GoldFlash> createState() => _GoldFlashState();
 }
@@ -2993,7 +3145,10 @@ class _GoldFlashState extends State<GoldFlash> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 700))..forward();
+    _c = AnimationController(
+        vsync: this,
+        duration: Duration(milliseconds: widget.strong ? 850 : 650))
+      ..forward();
   }
 
   @override
@@ -3004,12 +3159,22 @@ class _GoldFlashState extends State<GoldFlash> with SingleTickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
+    // [연출] 큰 한 방은 더 밝게 번쩍이고, 가장자리에서 중앙으로 빛이 모이는 방사 그라데이션.
+    final peak = widget.strong ? 0.62 : 0.42;
     return IgnorePointer(
       child: AnimatedBuilder(
         animation: _c,
         builder: (_, __) => Opacity(
-          opacity: (1 - _c.value) * 0.5,
-          child: Container(color: const Color(0xFFFFD54F)),
+          opacity: (1 - _c.value) * peak,
+          child: Container(
+            decoration: const BoxDecoration(
+              gradient: RadialGradient(
+                radius: 1.1,
+                colors: [Color(0xFFFFF1B8), Color(0xFFFFD54F), Color(0x00FFD54F)],
+                stops: [0.0, 0.45, 1.0],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -3141,6 +3306,8 @@ class _GameScreenState extends State<GameScreen> {
   Timer? _gateTimer;
   // 선택한 '길'을 감행 전까지 무장 상태로 보관(작전 브리핑 → 감행 2단계).
   GameOption? _armed;
+  // 태세: 0 신중 / 1 정면 / 2 과감 (작전 브리핑에서 선택)
+  int _stance = 1;
 
   @override
   void initState() {
@@ -3218,8 +3385,10 @@ class _GameScreenState extends State<GameScreen> {
   Widget _mainPlay() {
     final isResolution = m.stage == Stage.resolution;
     final crit = m.lastResult?.outcome == DiceOutcome.criticalSuccess;
+    final bigWin = m.bigWin || crit; // 황금 섬광: 대성공·잭팟·컴백·연승 모두
     return Shaker(
       shake: m.screenShake && isResolution,
+      intensity: m.shakeMag >= 2 ? 2 : 1,
       child: Stack(children: [
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _hud(),
@@ -3237,7 +3406,7 @@ class _GameScreenState extends State<GameScreen> {
           if (isResolution) TinyBubble(m.tinyLine),
           isResolution ? _afterBar() : _choiceBar(),
         ]),
-        if (crit && isResolution) const Positioned.fill(child: GoldFlash()),
+        if (bigWin && isResolution) Positioned.fill(child: GoldFlash(strong: m.shakeMag >= 2)),
         // 타이니 포커스 게이트: 사건 진입 시 화면 어둡게 + 타이니 단독 + 탭하여 진행
         if (m.tinyFocus && !isResolution) _tinyFocusGate(),
       ]),
@@ -3401,12 +3570,11 @@ class _GameScreenState extends State<GameScreen> {
           const SizedBox(height: 10),
           UI.badge(r.outcome.label, r.outcome.color),
           const SizedBox(height: 6),
-          Text(
-              '원본 ${r.rawRoll} → 적용 ${r.effectiveRoll}'
-              '${r.mythicApplied ? " (신화)" : ""}${r.hyperApplied ? " (고속도로)" : ""}'
-              '  + 보정 ${UI.sign(r.statModifier + r.extraModifier)} = ${r.finalValue} vs DC ${r.dc}',
+          // [직감] DC·산식 숫자는 감춘다. 대신 '얼마나 아슬했나'를 결로 전하고,
+          //  부족장이 실은 '기세(보정)'만 양의 강화로 드러낸다.
+          Text(_resultFlavor(r),
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF9C8C7E))),
+              style: const TextStyle(fontSize: 11.5, color: Color(0xFF9C8C7E), height: 1.35)),
           const Divider(height: 20, color: Color(0xFF3A2F28)),
         ],
         Text(m.narrative,
@@ -3486,7 +3654,8 @@ class _GameScreenState extends State<GameScreen> {
           final ending = opt.isEnding;
           final hidden = opt.isHiddenS;
           final locked = s.raidLocked && opt.type == ChoiceType.aggressive && !ending;
-          final chance = ending ? 0 : m.successChance(opt.type, m.dcFor(opt.type, ev.chapter));
+          // [직감] 정확한 %·DC 대신 본능 등급만 읽는다.
+          final read = ending ? null : m.instinctRead(opt.type, m.dcFor(opt.type, ev.chapter));
           final recommend =
               m.tutorialActive && !ending && !hidden && opt.type == recType;
           final accent = hidden
@@ -3496,12 +3665,7 @@ class _GameScreenState extends State<GameScreen> {
                   : recommend
                       ? const Color(0xFFE8A33D)
                       : const Color(0xFF4E4038);
-          // 위험도 색상(성공확률): 초록(안전) / 노랑(보통) / 빨강(위험)
-          final riskColor = chance >= 70
-              ? const Color(0xFF81C784)
-              : chance >= 40
-                  ? const Color(0xFFE8C34A)
-                  : const Color(0xFFE57373);
+          final riskColor = read?.color ?? const Color(0xFFE57373);
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: SizedBox(
@@ -3514,7 +3678,10 @@ class _GameScreenState extends State<GameScreen> {
                         if (opt.isEnding) {
                           m.choose(opt);
                         } else {
-                          setState(() => _armed = opt);
+                          setState(() {
+                            _armed = opt;
+                            _stance = 1; // 새 브리핑은 '정면'에서 시작
+                          });
                         }
                       },
                 style: ElevatedButton.styleFrom(
@@ -3551,25 +3718,29 @@ class _GameScreenState extends State<GameScreen> {
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: locked ? const Color(0xFFE57373) : riskColor),
                         ),
-                        child: Text(locked ? '봉쇄' : '$chance%',
+                        child: Text(locked ? '봉쇄' : (read?.label ?? ''),
                             style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                                 color: locked ? const Color(0xFFE57373) : riskColor)),
                       ),
                   ]),
-                  if (!ending) ...[
-                    const SizedBox(height: 5),
+                  if (!ending && read != null) ...[
+                    const SizedBox(height: 7),
                     Row(children: [
-                      Text('DC ${m.dcFor(opt.type, ev.chapter)} · ${opt.type.stat.icon}${opt.type.stat.label}',
+                      _instinctGauge(read),
+                      const SizedBox(width: 6),
+                      Text(opt.type.stat.icon,
                           style: const TextStyle(fontSize: 11, color: Color(0xFF9C8C7E))),
                       const Spacer(),
                       // 결과 미리보기 (성공 보상 / 실패 손실)
-                      Text('성공 +${GameManager.fmt(opt.goldSuccess)}',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF81C784))),
-                      const Text('  /  ', style: TextStyle(fontSize: 11, color: Color(0xFF5C5048))),
-                      Text(opt.goldFail == 0 ? '실패 손실 없음' : '실패 ${GameManager.fmt(opt.goldFail)}',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFFE57373))),
+                      Flexible(
+                        child: Text(
+                            '🪙+${GameManager.fmt(opt.goldSuccess)} / ${opt.goldFail == 0 ? "손실0" : "🩸${GameManager.fmt(opt.goldFail)}"}',
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFFB8ADA2))),
+                      ),
                     ]),
                   ],
                 ]),
@@ -3581,20 +3752,69 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
+  // [직감] 결과 한 줄 — DC·최종수치는 감추고, 던진 운명의 눈 + 내 '기세'(보정) + 착지감만 전한다.
+  String _resultFlavor(DiceResult r) {
+    final power = r.statModifier + r.extraModifier;
+    final powerTxt = power > 0 ? '🐅 기세 ${UI.sign(power)}이 실렸다' : '맨몸으로 부딪혔다';
+    final margin = r.finalValue - r.dc;
+    String land = '';
+    switch (r.outcome) {
+      case DiceOutcome.criticalSuccess:
+        land = '운명의 눈이 활짝 열렸다 — 대성공!';
+        break;
+      case DiceOutcome.criticalFailure:
+        land = '운명이 끝내 등을 돌렸다 — 대실패.';
+        break;
+      case DiceOutcome.success:
+        land = margin >= 5
+            ? '압도적으로 적중했다'
+            : (margin <= 1 ? '간발의 차로 적중했다' : '깔끔하게 적중했다');
+        break;
+      case DiceOutcome.failure:
+        land = (-margin) <= 2 ? '한 끗 차이로 빗나갔다' : '크게 빗나갔다';
+        break;
+    }
+    final mods = <String>[];
+    if (r.mythicApplied) mods.add('신화');
+    if (r.hyperApplied) mods.add('고속도로');
+    final modTxt = mods.isEmpty ? '' : ' · ${mods.join("·")}';
+    return '운명의 눈 ${r.rawRoll} · $powerTxt$modTxt\n$land';
+  }
+
+  // [직감] 본능 게이지 — 5칸 중 read.bars칸이 차오른다. 정확한 %는 절대 드러내지 않는다.
+  //  고정폭 세그먼트(Expanded 미사용) → Row·Column 어디에 놓아도 안전.
+  Widget _instinctGauge(InstinctRead read, {bool big = false}) {
+    final h = big ? 11.0 : 6.0;
+    final w = big ? 30.0 : 9.0;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(InstinctRead.totalBars, (i) {
+        final on = i < read.bars;
+        return Container(
+          width: w,
+          height: h,
+          margin: EdgeInsets.only(right: i == InstinctRead.totalBars - 1 ? 0 : 4),
+          decoration: BoxDecoration(
+            color: on ? read.color : const Color(0xFF2A2018),
+            borderRadius: BorderRadius.circular(3),
+            boxShadow: on && big
+                ? [BoxShadow(color: read.color.withOpacity(0.5), blurRadius: 5)]
+                : null,
+          ),
+        );
+      }),
+    );
+  }
+
   // ── 작전 브리핑(미리보기) → 감행: 길을 고른 뒤 한 박자 고민하는 단계 ──
   Widget _briefingPanel(GameOption opt, GameEvent ev) {
-    final dc = m.dcFor(opt.type, ev.chapter);
-    final chance = m.successChance(opt.type, dc);
-    final riskColor = chance >= 70
-        ? const Color(0xFF81C784)
-        : chance >= 40
-            ? const Color(0xFFE8C34A)
-            : const Color(0xFFE57373);
-    final riskLabel = chance >= 70
-        ? '발톱이 먼저 닿을 자리'
-        : chance >= 40
-            ? '숨을 고르고 노릴 자리'
-            : '목을 내건 한 수';
+    final stanceDc = _stance == 0 ? -3 : (_stance == 2 ? 3 : 0);
+    final dc = m.dcFor(opt.type, ev.chapter) + stanceDc + m.omenDcMod;
+    // [직감] 태세·전조까지 반영한 본능 등급(숫자 비노출). 태세를 바꾸면 게이지가 반응한다.
+    final read = m.instinctRead(opt.type, dc);
+    final riskColor = read.color;
+    final stanceMul = _stance == 0 ? 0.8 : (_stance == 2 ? 1.4 : 1.0);
+    final shownGold = (opt.goldSuccess * stanceMul * m.omenRewardMul).round();
     final hasItem = opt.itemReward != null && opt.itemReward!.isNotEmpty;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -3617,36 +3837,38 @@ class _GameScreenState extends State<GameScreen> {
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFF3EBDF))),
           ),
         ]),
+        if (m.omenText.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0x229D8DF1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF9D8DF1)),
+            ),
+            child: Text(m.omenText,
+                style: const TextStyle(fontSize: 11.5, color: Color(0xFFD8CCF0), height: 1.3)),
+          ),
+        ],
         const SizedBox(height: 12),
         Row(children: [
-          Text('${opt.type.stat.icon} ${opt.type.stat.label}의 길',
+          Text('${opt.type.stat.icon} ${opt.type.stat.label}의 길 — 본능의 직감',
               style: const TextStyle(fontSize: 12, color: Color(0xFF9C8C7E))),
           const Spacer(),
-          Text('$chance%',
+          Text(read.label,
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: riskColor)),
         ]),
-        const SizedBox(height: 6),
-        SizedBox(
-          height: 9,
-          child: Stack(children: [
-            Container(
-                decoration: BoxDecoration(
-                    color: const Color(0xFF2A2018), borderRadius: BorderRadius.circular(6))),
-            FractionallySizedBox(
-              widthFactor: (chance / 100).clamp(0.0, 1.0),
-              child: Container(
-                  decoration: BoxDecoration(color: riskColor, borderRadius: BorderRadius.circular(6))),
-            ),
-          ]),
-        ),
-        const SizedBox(height: 5),
-        Text('$riskLabel · 운명의 눈 ${dc} 이상이면 적중',
-            style: TextStyle(fontSize: 11, color: riskColor)),
+        const SizedBox(height: 8),
+        _instinctGauge(read, big: true),
+        const SizedBox(height: 7),
+        Text(read.omenLine,
+            style: TextStyle(fontSize: 11.5, height: 1.3, color: riskColor)),
         const SizedBox(height: 12),
         Row(children: [
           const Text('거머쥘 전리품', style: TextStyle(fontSize: 12, color: Color(0xFF9C8C7E))),
           const Spacer(),
-          Text('🪙 +${GameManager.fmt(opt.goldSuccess)}',
+          Text('🪙 +${GameManager.fmt(shownGold)}',
               style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF81C784))),
         ]),
         if (hasItem) ...[
@@ -3665,6 +3887,16 @@ class _GameScreenState extends State<GameScreen> {
           Text(opt.goldFail == 0 ? '흘릴 피 없음' : '🩸 ${GameManager.fmt(opt.goldFail)}',
               style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFFE57373))),
         ]),
+        const SizedBox(height: 12),
+        const Text('태세를 정하십시오', style: TextStyle(fontSize: 11, color: Color(0xFF9C8C7E))),
+        const SizedBox(height: 6),
+        Row(children: [
+          _stanceChip(0, '🌒 신중', '명중 ↑ 전리품 ↓'),
+          const SizedBox(width: 7),
+          _stanceChip(1, '🐅 정면', '그대로'),
+          const SizedBox(width: 7),
+          _stanceChip(2, '🔥 과감', '명중 ↓ 전리품 ↑'),
+        ]),
         const SizedBox(height: 14),
         Row(children: [
           Expanded(
@@ -3676,12 +3908,44 @@ class _GameScreenState extends State<GameScreen> {
             flex: 2,
             child: UI.bigBtn('⚔ 감행 — 운명의 주사위', const Color(0xFFB7402E), Colors.white, () {
               final o = _armed!;
+              final st = _stance;
               setState(() => _armed = null);
-              m.choose(o);
+              m.choose(o, stance: st);
             }),
           ),
         ]),
       ]),
+    );
+  }
+
+  // 태세 선택 칩 (작전 브리핑 전용)
+  Widget _stanceChip(int v, String label, String sub) {
+    final on = _stance == v;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _stance = v),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+          decoration: BoxDecoration(
+            color: on ? const Color(0x33E8A33D) : const Color(0xFF1A1410),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+                color: on ? const Color(0xFFE8A33D) : const Color(0xFF3A2F28),
+                width: on ? 2 : 1),
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                    color: on ? const Color(0xFFFFD54F) : const Color(0xFFB8ADA2))),
+            const SizedBox(height: 2),
+            Text(sub,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 9.5, color: Color(0xFF9C8C7E))),
+          ]),
+        ),
+      ),
     );
   }
 
@@ -3901,7 +4165,7 @@ class _GameScreenState extends State<GameScreen> {
             style: const TextStyle(fontSize: 14, height: 1.6, color: Color(0xFFD9CFC6))),
         if (r != null && !done) ...[
           const SizedBox(height: 8),
-          Text('🎲 ${r.rawRoll} → ${r.finalValue} vs DC ${r.dc} · ${r.outcome.label}',
+          Text('🎲 운명의 눈 ${r.rawRoll} · ${r.outcome.label}',
               style: TextStyle(fontSize: 12, color: r.outcome.color)),
         ],
         const SizedBox(height: 22),
@@ -4146,12 +4410,12 @@ class _GameScreenState extends State<GameScreen> {
           const Spacer(),
           UI.badge(
               s.creditGrade == 1
-                  ? '10% 할인'
+                  ? '10% 깎임'
                   : s.creditGrade == 3
-                      ? '20% 할증'
+                      ? '20% 얹힘'
                       : s.creditGrade == 4
                           ? '이용 불가'
-                          : '정가',
+                          : '제값',
               s.creditGrade == 1
                   ? const Color(0xFF81C784)
                   : s.creditGrade >= 3
@@ -4231,7 +4495,8 @@ class _GameScreenState extends State<GameScreen> {
     return ListView(
       padding: const EdgeInsets.all(14),
       children: r.hunts.map((t) {
-        final chance = m.successChance(m.typeForStat(t.stat), t.dc);
+        // [직감] 사냥감도 % 대신 본능 등급으로만 가늠한다.
+        final read = m.instinctRead(m.typeForStat(t.stat), t.dc);
         return Padding(
           padding: const EdgeInsets.only(bottom: 9),
           child: Container(
@@ -4246,8 +4511,13 @@ class _GameScreenState extends State<GameScreen> {
                 Expanded(
                     child: Text(t.name,
                         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
-                Text('${t.stat.icon} DC ${t.dc}·$chance%',
+                Text('${t.stat.icon}${t.stat.label}',
                     style: const TextStyle(fontSize: 11, color: Color(0xFF9C8C7E))),
+                const SizedBox(width: 8),
+                _instinctGauge(read),
+                const SizedBox(width: 6),
+                Text(read.label,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: read.color)),
               ]),
               const SizedBox(height: 6),
               Row(children: [
