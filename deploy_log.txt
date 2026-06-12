@@ -1,31 +1,7 @@
 ================================================== 
- AuhHeung deploy log  2026-06-12 14:08:34.10 
+ AuhHeung deploy log  2026-06-12 14:35:22.68 
  folder: C:\Users\HERO\Desktop\AI\2_project_AuhHeung\web_deploy\ 
 ================================================== 
 [git] git version 2.54.0.windows.1 
  
 ----- [1/3] git add . ----- 
- 
------ [2/3] git commit ----- 
-[main 8f44bf0] update 2026-06-12 14:08:34.52
- 1 file changed, 1 insertion(+), 26 deletions(-)
-[commit exit code] 0 
- 
------ [3/3] git push ----- 
-To https://github.com/ppyojog/auh-heung.git
-   76f61f1..8f44bf0  main -> main
-[push exit code] 0 
- 
------ git status ----- 
-On branch main
-Your branch is up to date with 'origin/main'.
-
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-  (use "git restore <file>..." to discard changes in working directory)
-	modified:   deploy_log.txt
-
-no changes added to commit (use "git add" and/or "git commit -a")
- 
------ last commit ----- 
-8f44bf0 update 2026-06-12 14:08:34.52
