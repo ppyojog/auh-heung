@@ -339,6 +339,8 @@ class World {
   double pr = 11; // 반지름
   // 광기(어흥!) 궁극기 — 처치로 차오르고, 해방 시 화면 대포효 + 광폭화
   double rage = 0, rageMax = 75, berserkT = 0;
+  // 펫 타이니 — 플레이어를 졸졸 따라다니며 표정으로 반응
+  double petX = 0, petY = 0, petHappyT = 0;
   // 충신 herald (텍스트 대사 + 표정으로 톤 전달)
   String heraldLine = '';
   String heraldFace = '🐯';
@@ -559,6 +561,9 @@ class World {
     hp = maxHp;
     rage = 0;
     berserkT = 0;
+    petX = px - 20;
+    petY = py - 22;
+    petHappyT = 0;
     heraldLine = '';
     heraldT = 0;
     _heraldCd = 0;
@@ -683,6 +688,11 @@ class World {
     if (dt > 0.05) dt = 0.05;
     time += dt;
     if (berserkT > 0) berserkT = max(0, berserkT - dt);
+    // 펫 타이니 — 플레이어 좌상단을 부드럽게 따라다님
+    if (petHappyT > 0) petHappyT = max(0, petHappyT - dt);
+    final k = (dt * 7).clamp(0.0, 1.0);
+    petX += (px - 20 - petX) * k;
+    petY += (py - 24 - petY) * k;
     // 충신 타이머
     if (heraldT > 0) heraldT -= dt;
     if (_heraldCd > 0) _heraldCd -= dt;
@@ -752,6 +762,7 @@ class World {
       xpNext = (xpNext * 1.26 + 2).roundToDouble();
       _hapticBig = true;
       _shakeAdd(9);
+      petHappyT = 1.6; // 펫이 신남
       sfx.play('level');
       _say(_pick(Tiny.level), force: true, face: '😺');
       pulses.add(Pulse(px, py, 120, 0.5, P.gold));
@@ -1036,6 +1047,7 @@ class World {
       if (e.hp <= 0 && !e.dead) {
         e.dead = true;
         kills += 1;
+        petHappyT = 1.0; // 펫이 기뻐함
         rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)) * diff);
         if (e.type == EType.boss) {
           _float(e.x, e.y - e.radius, 'BOSS 격파!', P.gold, 18);
@@ -2160,6 +2172,8 @@ class WorldPainter extends CustomPainter {
 
     // 플레이어 (백호 — 네온 골드)
     _player(canvas);
+    // 펫 타이니 (졸졸 따라다니며 표정 반응)
+    _pet(canvas);
 
     // 데미지 숫자
     final tp = TextPainter(textDirection: TextDirection.ltr);
@@ -2259,6 +2273,26 @@ class WorldPainter extends CustomPainter {
             ..strokeWidth = 3.5
             ..color = P.gold);
     }
+  }
+
+  // 펫 타이니 — 작은 아이콘이 플레이어를 따라다니며 표정으로 반응(펫 감성)
+  void _pet(Canvas canvas) {
+    if (w.phase == GPhase.title) return;
+    final t = w.time;
+    final bob = sin(t * 4.5) * 2.6;
+    final x = w.petX, y = w.petY + bob;
+    final hurt = w.contactCdView > 0;
+    final happy = w.petHappyT > 0;
+    final face = hurt ? '🙀' : (happy ? '😻' : '🐯');
+    // 기분에 따라 발광 색/세기
+    final gc = hurt ? P.red : (happy ? P.gold : P.muted);
+    canvas.drawCircle(Offset(x, y), happy ? 14 : 11,
+        Paint()..color = gc.withOpacity(happy ? 0.28 : 0.14));
+    final tp = TextPainter(
+      text: TextSpan(text: face, style: const TextStyle(fontSize: 18)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
   }
 
   // 플레이어 — 캐릭터별 외형 + 코드 절차 애니메이션(숨쉬기·통통·눈깜빡·꼬리). 귀엽게.
