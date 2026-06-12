@@ -291,7 +291,24 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, choice, dead }
+enum GPhase { title, playing, levelup, choice, dead, shop }
+
+// 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
+class MetaUp {
+  final String id, icon, name, desc;
+  final int baseCost, maxLv;
+  final double growth;
+  const MetaUp(this.id, this.icon, this.name, this.desc, this.baseCost, this.maxLv,
+      [this.growth = 1.55]);
+}
+
+const List<MetaUp> kMeta = [
+  MetaUp('atk', '💪', '맹수의 발톱', '시작 공격력 +5%', 30, 10),
+  MetaUp('hp', '❤', '두꺼운 가죽', '시작 체력 +15', 25, 10),
+  MetaUp('spd', '🌬', '바람의 다리', '시작 이동속도 +4%', 30, 6),
+  MetaUp('pick', '🧲', '굶주린 코', '수집 범위 +8', 25, 6),
+  MetaUp('gain', '🦷', '전리품 사냥꾼', '송곳니 획득 +12%', 40, 8),
+];
 
 // 타이니 선택 대화 — 난이도를 가르는 분기 (선택권은 주되 욕망으로 망할 수 있는 구조)
 class TinyChoice {
@@ -389,20 +406,62 @@ class World {
   // 기록
   double bestTime = 0;
   int bestKills = 0;
+  // 메타 진행 — 영구 화폐 '송곳니' + 강화 레벨
+  int fangs = 0;
+  final Map<String, int> meta = {};
+  int runFangs = 0; // 이번 런에서 번 송곳니(사망 화면 표시)
+
+  int metaLv(String id) => meta[id] ?? 0;
+  int metaCost(String id) {
+    final m = kMeta.firstWhere((e) => e.id == id);
+    return (m.baseCost * pow(m.growth, metaLv(id))).round();
+  }
+
+  bool buyMeta(String id) {
+    final m = kMeta.firstWhere((e) => e.id == id);
+    if (metaLv(id) >= m.maxLv) return false;
+    final c = metaCost(id);
+    if (fangs < c) return false;
+    fangs -= c;
+    meta[id] = metaLv(id) + 1;
+    _saveMeta();
+    return true;
+  }
+
+  // 위협도(현재 난이도 diff 기반) — 스테이지 느낌 표시
+  String get threatLabel => diff < 0.85
+      ? '안온'
+      : diff < 1.15
+          ? '평이'
+          : diff < 1.5
+              ? '거셈'
+              : diff < 1.85
+                  ? '흉포'
+                  : '지옥';
+  int get threatStars => (diff / 0.45).clamp(1, 5).floor();
+  Color get threatColor => diff < 1.15
+      ? P.green
+      : diff < 1.5
+          ? P.gold
+          : diff < 1.85
+              ? const Color(0xFFE8702E)
+              : P.red;
 
   // 햅틱 큐 (UI가 소비)
   bool _hapticHit = false, _hapticBig = false;
 
   World() {
     _loadRecords();
+    _loadMeta();
   }
 
-  // ── 파생 스탯 (캐릭터 배수 + 광폭화 반영) ──
-  double get maxHp => (baseMaxHp + 25 * hideLv) * charHp;
+  // ── 파생 스탯 (캐릭터 배수 + 광폭화 + 영구 강화(meta) 반영) ──
+  double get maxHp => (baseMaxHp + 25 * hideLv + 15 * metaLv('hp')) * charHp;
   double get speed =>
-      baseSpeed * (1 + 0.10 * windLv) * charSpeed * (berserkT > 0 ? 1.18 : 1.0);
-  double get pickupRange => 58 + 16.0 * hungerLv;
-  double get dmgMult => (1 + 0.12 * wildLv) * charDmg * (berserkT > 0 ? 1.35 : 1.0);
+      baseSpeed * (1 + 0.10 * windLv + 0.04 * metaLv('spd')) * charSpeed * (berserkT > 0 ? 1.18 : 1.0);
+  double get pickupRange => 58 + 16.0 * hungerLv + 8 * metaLv('pick');
+  double get dmgMult =>
+      (1 + 0.12 * wildLv + 0.05 * metaLv('atk')) * charDmg * (berserkT > 0 ? 1.35 : 1.0);
   double get fireMult => (1 + 0.10 * rageLv) * (berserkT > 0 ? 1.6 : 1.0);
   bool get rageReady => rage >= rageMax;
 
@@ -1075,7 +1134,28 @@ class World {
     sfx.play('death');
     if (time > bestTime) bestTime = time;
     if (kills > bestKills) bestKills = kills;
+    // 전리품 적립 — 죽음이 헛되지 않게(플레이한 만큼 보상)
+    runFangs = ((kills + time.floor() + level * 8) * (1 + 0.12 * metaLv('gain'))).round();
+    fangs += runFangs;
     _saveRecords();
+    _saveMeta();
+  }
+
+  void _loadMeta() {
+    try {
+      final raw = html.window.localStorage['surv_meta'];
+      if (raw == null) return;
+      final j = (jsonDecode(raw) as Map).cast<String, dynamic>();
+      fangs = j['fangs'] as int? ?? 0;
+      final m = (j['up'] as Map?) ?? {};
+      m.forEach((k, v) => meta[k as String] = v as int);
+    } catch (_) {}
+  }
+
+  void _saveMeta() {
+    try {
+      html.window.localStorage['surv_meta'] = jsonEncode({'fangs': fangs, 'up': meta});
+    } catch (_) {}
   }
 
   // ── 햅틱 큐 소비 ──
@@ -1177,6 +1257,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.playing) _rageButton(),
             if (world.phase == GPhase.playing && world.heraldT > 0) _heraldBubble(),
             if (world.phase == GPhase.title) _title(),
+            if (world.phase == GPhase.shop) _shopOverlay(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.choice && world.tinyChoice != null) _choiceOverlay(),
             if (world.phase == GPhase.dead) _death(),
@@ -1218,8 +1299,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           child: Column(children: [
             Row(children: [
               _tag('🕒 ${World.mmss(world.time)}'),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _tag('Lv ${world.level}', color: P.gold),
+              const SizedBox(width: 6),
+              _tag('⚔${world.threatLabel}', color: world.threatColor),
               const Spacer(),
               _tag('☠ ${world.kills}', color: P.red),
             ]),
@@ -1438,7 +1521,102 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 style: const TextStyle(color: P.muted, fontSize: 12)),
           const SizedBox(height: 22),
           _bigBtn('⚔  생존 시작', sel.color, () => setState(() => world.startGame())),
+          const SizedBox(height: 12),
+          _bigBtn('🦷  전리품 상점  (보유 ${world.fangs})', P.panel,
+              () => setState(() => world.phase = GPhase.shop),
+              dark: false),
           const SizedBox(height: 16),
+        ]),
+      ),
+    );
+  }
+
+  // ── 전리품 상점 (영구 강화) ──
+  Widget _shopOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.82),
+      child: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
+            child: Row(children: [
+              const Text('🦷 전리품 상점',
+                  style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              Text('보유 🦷 ${world.fangs}',
+                  style: const TextStyle(color: P.goldSoft, fontSize: 15, fontWeight: FontWeight.bold)),
+            ]),
+          ),
+          const Text('죽음은 헛되지 않는다 — 사냥한 만큼 영원히 강해진다',
+              style: TextStyle(color: P.muted, fontSize: 12)),
+          const SizedBox(height: 6),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              children: kMeta.map((m) {
+                final lv = world.metaLv(m.id);
+                final maxed = lv >= m.maxLv;
+                final cost = world.metaCost(m.id);
+                final afford = !maxed && world.fangs >= cost;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: P.panel,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: P.line),
+                    ),
+                    child: Row(children: [
+                      Text(m.icon, style: const TextStyle(fontSize: 26)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('${m.name}  Lv $lv/${m.maxLv}',
+                              style: const TextStyle(
+                                  color: P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 2),
+                          Text(m.desc, style: const TextStyle(color: P.muted, fontSize: 11.5)),
+                        ]),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        width: 86,
+                        child: Material(
+                          color: maxed
+                              ? const Color(0xFF2A2018)
+                              : (afford ? P.gold : const Color(0xFF2A2018)),
+                          borderRadius: BorderRadius.circular(10),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: afford
+                                ? () => setState(() => world.buyMeta(m.id))
+                                : null,
+                            child: Container(
+                              alignment: Alignment.center,
+                              padding: const EdgeInsets.symmetric(vertical: 11),
+                              child: Text(maxed ? 'MAX' : '🦷 $cost',
+                                  style: TextStyle(
+                                      color: maxed
+                                          ? P.muted
+                                          : (afford ? Colors.black : P.muted),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ]),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+            child: _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = GPhase.title),
+                dark: false),
+          ),
         ]),
       ),
     );
@@ -1577,10 +1755,24 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             const SizedBox(height: 8),
             Text('최고 ${World.mmss(world.bestTime)} · ${world.bestKills}킬',
                 style: const TextStyle(color: P.gold, fontSize: 12)),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0x22E8A33D),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text('🦷 전리품 +${world.runFangs}  (보유 ${world.fangs})',
+                  style: const TextStyle(
+                      color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
+            ),
           ]),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
         _bigBtn('🔥  다시 일어선다', P.blood, () => setState(() => world.startGame()), dark: false),
+        const SizedBox(height: 10),
+        _bigBtn('🦷  전리품 상점', P.panel, () => setState(() => world.phase = GPhase.shop),
+            dark: false),
       ]),
     );
   }
