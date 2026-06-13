@@ -2233,91 +2233,86 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ── 타이니 메뉴 (호출 시) — 난이도 정보 + 상점/음소거/포기 ──
+  // ── 일시정지 허브 (타이니 호출) — 현황 + 이어하기 + 타일 그리드. 통일된 레이아웃 ──
   Widget _menuOverlay() {
     return Container(
-      color: Colors.black.withOpacity(0.8),
+      color: const Color(0xF20A0806),
       alignment: Alignment.center,
       child: SingleChildScrollView(
-      padding: const EdgeInsets.all(22),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('🐯 타이니', style: TextStyle(color: P.gold, fontSize: 22, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        const Text('부르셨습니까, 대장님?', style: TextStyle(color: P.muted, fontSize: 12)),
-        const SizedBox(height: 16),
-        // 간략 현황 (읽기 전용)
-        Container(
-          width: 300,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: P.panel,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: world.threatColor.withOpacity(0.7)),
+        padding: const EdgeInsets.all(20),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('🐯  잠시 숨 고르기',
+              style: TextStyle(color: P.gold, fontSize: 21, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 14),
+          // 현황 카드
+          Container(
+            width: 320,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            decoration: BoxDecoration(
+              color: P.panel,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: world.threatColor.withOpacity(0.7)),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+              _miniStat('사냥터', 'STAGE ${world.stage}', world.threatColor),
+              _miniStat('생존', World.mmss(world.time), P.parch),
+              _miniStat('처치', '${world.kills}', P.red),
+              _miniStat('🦷', '${world.fangs}', P.goldSoft),
+            ]),
           ),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _miniStat('STAGE', '${world.stage}', world.threatColor),
-            _miniStat('적 강함', '×${world.diff.toStringAsFixed(2)}', world.threatColor),
-            _miniStat('생존', World.mmss(world.time), P.parch),
-            _miniStat('처치', '${world.kills}', P.red),
-          ]),
-        ),
-        const SizedBox(height: 16),
-        _bigBtn('▶  이어하기', P.gold, () => setState(() => world.resume())),
-        const SizedBox(height: 10),
-        _bigBtn('🗺  사냥터 이동', P.cyan, () => setState(() => world.phase = GPhase.travel)),
-        const SizedBox(height: 10),
-        // 장비 / 인벤토리 (분리)
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          _halfBtn('🛡  장비', () => setState(() {
-                world.statusReturn = GPhase.menu;
-                world.phase = GPhase.status;
-              })),
-          const SizedBox(width: 10),
-          _halfBtn('🎒  인벤토리', () => setState(() {
-                world.statusReturn = GPhase.menu;
-                world.phase = GPhase.inventory;
-              })),
+          const SizedBox(height: 14),
+          // 주 동작: 이어하기 / 사냥터 이동
+          SizedBox(
+            width: 320,
+            child: Row(children: [
+              Expanded(
+                  child: _actBtn('▶  이어하기', P.gold, true,
+                      () => setState(() => world.resume()))),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: _actBtn('🗺  사냥터', P.cyan, true,
+                      () => setState(() => world.phase = GPhase.travel))),
+            ]),
+          ),
+          const SizedBox(height: 14),
+          // 허브 타일 그리드 (단련/장비/창고/업적/무늬/설정)
+          SizedBox(width: 320, child: _hubGrid(from: GPhase.menu)),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: 320,
+            child: _actBtn('🏠  소굴로 (세이브 선택)', P.panel, false,
+                () => setState(() => world.phase = GPhase.title)),
+          ),
+          const SizedBox(height: 9),
+          SizedBox(
+            width: 320,
+            child: _actBtn('🐞  치트: +10 레벨', const Color(0xFF24301F), false,
+                () => setState(() => world.cheatLevel10())),
+          ),
         ]),
-        const SizedBox(height: 10),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          _halfBtn('🦷  상점', () => setState(() {
-                world.shopReturn = GPhase.menu;
-                world.phase = GPhase.shop;
-              })),
-          const SizedBox(width: 10),
-          _halfBtn('⚙  옵션', () => setState(() {
-                world.statusReturn = GPhase.menu;
-                world.phase = GPhase.options;
-              })),
-        ]),
-        const SizedBox(height: 10),
-        _bigBtn('🏠  세이브 선택(타이틀)', P.panel, () => setState(() => world.phase = GPhase.title),
-            dark: false),
-        const SizedBox(height: 10),
-        // [내부 테스트 치트] 타이니 +10 레벨
-        _bigBtn('🐞  치트: +10 레벨', const Color(0xFF2A3A2A),
-            () => setState(() => world.cheatLevel10()), dark: false),
-      ]),
       ),
     );
   }
 
-  // 절반 너비 버튼 (2열 배치용)
-  Widget _halfBtn(String t, VoidCallback onTap) => Material(
-        color: P.panel,
-        borderRadius: BorderRadius.circular(12),
+  // 통일 액션 버튼 (full/expanded용). primary=강조(밝은색), 아니면 패널 테두리.
+  Widget _actBtn(String t, Color c, bool primary, VoidCallback onTap) => Material(
+        color: primary ? c : P.panel,
+        borderRadius: BorderRadius.circular(14),
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           onTap: onTap,
           child: Container(
-            width: 145,
             alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(vertical: 13),
-            decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12), border: Border.all(color: P.line)),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: primary
+                ? null
+                : BoxDecoration(
+                    borderRadius: BorderRadius.circular(14), border: Border.all(color: P.line)),
             child: Text(t,
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                style: TextStyle(
+                    color: primary ? Colors.black : Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold)),
           ),
         ),
       );
@@ -2568,32 +2563,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 style: const TextStyle(color: P.muted, fontSize: 12)),
           const SizedBox(height: 14),
           _startStagePicker(),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           _bigBtn(world.maxStage > 1 ? '⚔  STAGE ${world.startStage} 생존 시작' : '⚔  생존 시작',
               sel.color, () => setState(() => world.startGame(atStage: world.startStage))),
-          const SizedBox(height: 12),
-          _bigBtn('📊  상태 · 장비', P.panel, () => setState(() {
-                world.statusReturn = GPhase.title;
-                world.phase = GPhase.status;
-              }), dark: false),
-          const SizedBox(height: 10),
-          _bigBtn('🦷  전리품 상점  (보유 ${world.fangs})', P.panel, () => setState(() {
-                world.shopReturn = GPhase.title;
-                world.phase = GPhase.shop;
-              }), dark: false),
-          const SizedBox(height: 10),
-          _bigBtn('🏆  업적  (${world.achieved.length}/${kAch.length})', P.panel,
-              () => setState(() => world.phase = GPhase.achieve),
-              dark: false),
-          const SizedBox(height: 10),
-          _bigBtn('🎀  스킨  (${world.ownedSkins.length}/${kSkins.length})', P.panel,
-              () => setState(() => world.phase = GPhase.skins),
-              dark: false),
-          const SizedBox(height: 10),
-          _bigBtn('⚙  옵션', P.panel, () => setState(() {
-                world.statusReturn = GPhase.title;
-                world.phase = GPhase.options;
-              }), dark: false),
+          const SizedBox(height: 16),
+          // 통일 허브 그리드 (단련/장비/창고/업적/무늬/설정)
+          SizedBox(width: 320, child: _hubGrid(from: GPhase.title)),
           if (world.dailyJustClaimed) ...[
             const SizedBox(height: 12),
             Container(
@@ -2616,22 +2591,15 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   // ── 전리품 상점 (영구 강화) ──
   Widget _shopOverlay() {
     return Container(
-      color: Colors.black.withOpacity(0.82),
+      color: const Color(0xF20A0806),
       child: SafeArea(
         child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
-            child: Row(children: [
-              const Text('🦷 전리품 상점',
-                  style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              Text('보유 🦷 ${world.fangs}',
-                  style: const TextStyle(color: P.goldSoft, fontSize: 15, fontWeight: FontWeight.bold)),
-            ]),
+          _ohead('💪', '단련'),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(18, 0, 18, 4),
+            child: Text('송곳니로 영구히 강해진다 — 죽음은 헛되지 않는다',
+                style: TextStyle(color: P.muted, fontSize: 11.5)),
           ),
-          const Text('죽음은 헛되지 않는다 — 사냥한 만큼 영원히 강해진다',
-              style: TextStyle(color: P.muted, fontSize: 12)),
-          const SizedBox(height: 6),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -2694,27 +2662,22 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               }).toList(),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
-            child: _bigBtn('← 돌아가기', P.panel,
-                () => setState(() => world.phase = world.shopReturn),
-                dark: false),
-          ),
+          _backBar(world.shopReturn),
         ]),
       ),
     );
   }
 
-  // ── 코스메틱 스킨 ──
+  // ── 무늬(스킨) ──
   Widget _skinsOverlay() {
     return Container(
-      color: Colors.black.withOpacity(0.82),
+      color: const Color(0xF20A0806),
       child: SafeArea(
         child: Column(children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
             child: Row(children: [
-              const Text('🎀 스킨',
+              const Text('🎨 무늬',
                   style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
               const Spacer(),
               Text('보유 🦷 ${world.fangs}',
@@ -2788,17 +2751,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               }).toList(),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
-            child: _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = GPhase.title),
-                dark: false),
-          ),
+          _backBar(world.statusReturn),
         ]),
       ),
     );
   }
 
-  // ── 상태 · 장비 (RPG) — 시작 스탯 미리보기 + 장비 장착/구매(대장간 겸용) ──
+  // ── 장비 · 능력치 — 시작 스탯 + 장착 슬롯 ──
   Widget _statusOverlay() {
     final dmgP = (5 * world.metaLv('atk') + world.gearStat('dmg')).round();
     final asP = world.gearStat('as').round();
@@ -2808,19 +2767,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     final regenV = world.gearStat('regen');
     final inRun = world.statusReturn == GPhase.menu;
     return Container(
-      color: Colors.black.withOpacity(0.86),
+      color: const Color(0xF20A0806),
       child: SafeArea(
         child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
-            child: Row(children: [
-              const Text('🛡 장비 · 능력치',
-                  style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              Text('보유 🦷 ${world.fangs}',
-                  style: const TextStyle(color: P.goldSoft, fontSize: 15, fontWeight: FontWeight.bold)),
-            ]),
-          ),
+          _ohead('🛡', '장비 · 능력치'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
@@ -2878,11 +2828,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
-            child: _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = world.statusReturn),
-                dark: false),
-          ),
+          _backBar(world.statusReturn),
         ]),
       ),
     );
@@ -2924,25 +2870,16 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ── 인벤토리 / 대장간 — 보유·구매 장비 목록(장착/구매) ──
+  // ── 창고 / 대장간 — 보유·구매 장비 목록(장착/구매) ──
   Widget _inventoryOverlay() {
     return Container(
-      color: Colors.black.withOpacity(0.86),
+      color: const Color(0xF20A0806),
       child: SafeArea(
         child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
-            child: Row(children: [
-              const Text('🎒 인벤토리 · 대장간',
-                  style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              Text('보유 🦷 ${world.fangs}',
-                  style: const TextStyle(color: P.goldSoft, fontSize: 15, fontWeight: FontWeight.bold)),
-            ]),
-          ),
+          _ohead('🎒', '창고 · 대장간'),
           const Padding(
             padding: EdgeInsets.fromLTRB(18, 0, 18, 4),
-            child: Text('보유 장비는 [장착], 미보유는 🦷로 대장간 구매. 슬롯당 1개 장착.',
+            child: Text('보유 장비는 [장착], 미보유는 🦷로 대장간 구매. 슬롯당 1개.',
                 style: TextStyle(color: P.muted, fontSize: 11)),
           ),
           Expanded(
@@ -2951,11 +2888,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               children: kGear.map((g) => _gearRow(g)).toList(),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
-            child: _bigBtn('← 장비 화면으로', P.panel, () => setState(() => world.phase = GPhase.status),
-                dark: false),
-          ),
+          _backBar(GPhase.status, label: '장비로'),
         ]),
       ),
     );
@@ -2964,7 +2897,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   // ── 사냥터 이동 (전용 화면) — STAGE 버튼으로 선택·이동 ──
   Widget _travelOverlay() {
     return Container(
-      color: Colors.black.withOpacity(0.85),
+      color: const Color(0xF20A0806),
       alignment: Alignment.center,
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(22),
@@ -3016,7 +2949,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           const Text('낮추면 수월 · 올리면 적 강함 + XP·전리품↑ (탭하면 즉시 이동)',
               textAlign: TextAlign.center, style: TextStyle(color: P.muted, fontSize: 10.5)),
           const SizedBox(height: 18),
-          _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = GPhase.menu), dark: false),
+          SizedBox(
+              width: 320,
+              child: _actBtn('✕  닫기', P.panel, false,
+                  () => setState(() => world.phase = GPhase.menu))),
         ]),
       ),
     );
@@ -3025,7 +2961,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   // ── 옵션 (설정) — 검증된 핵심 옵션. 전역 저장 ──
   Widget _optionsOverlay() {
     return Container(
-      color: Colors.black.withOpacity(0.88),
+      color: const Color(0xF20A0806),
       alignment: Alignment.center,
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(22),
@@ -3070,15 +3006,17 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               Row(children: [
                 _joyPosBtn('왼쪽', 0),
                 const SizedBox(width: 8),
-                _joyPosBtn('가운데', 1),
+                _joyPosBtn('엄지존(권장)', 1),
                 const SizedBox(width: 8),
                 _joyPosBtn('오른쪽', 2),
               ]),
             ]),
           ),
           const SizedBox(height: 18),
-          _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = world.statusReturn),
-              dark: false),
+          SizedBox(
+              width: 320,
+              child: _actBtn('✕  닫기', P.panel, false,
+                  () => setState(() => world.phase = world.statusReturn))),
         ]),
       ),
     );
@@ -3234,19 +3172,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   // ── 업적 ──
   Widget _achieveOverlay() {
     return Container(
-      color: Colors.black.withOpacity(0.82),
+      color: const Color(0xF20A0806),
       child: SafeArea(
         child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
-            child: Row(children: [
-              const Text('🏆 업적',
-                  style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              Text('${world.achieved.length} / ${kAch.length}',
-                  style: const TextStyle(color: P.goldSoft, fontSize: 15, fontWeight: FontWeight.bold)),
-            ]),
-          ),
+          _ohead('🏆', '업적', fangs: false, trailing: '${world.achieved.length} / ${kAch.length}'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
@@ -3282,11 +3211,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               }).toList(),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
-            child: _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = GPhase.title),
-                dark: false),
-          ),
+          _backBar(world.statusReturn),
         ]),
       ),
     );
@@ -3573,6 +3498,114 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ),
         ),
       );
+
+  // ── 통일 컴포넌트 (전면 개편) ──
+  // 모든 오버레이 공용 헤더: 아이콘 + 제목 + (선택)송곳니
+  Widget _ohead(String icon, String title, {bool fangs = true, String? trailing}) => Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+        child: Row(children: [
+          Text(icon, style: const TextStyle(fontSize: 22)),
+          const SizedBox(width: 9),
+          Text(title, style: const TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          if (trailing != null)
+            Text(trailing,
+                style: const TextStyle(color: P.goldSoft, fontSize: 14, fontWeight: FontWeight.bold))
+          else if (fangs)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+              decoration: BoxDecoration(
+                color: P.gold.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: P.gold.withOpacity(0.5)),
+              ),
+              child: Text('🦷 ${world.fangs}',
+                  style: const TextStyle(color: P.goldSoft, fontSize: 14, fontWeight: FontWeight.bold)),
+            ),
+        ]),
+      );
+
+  // 공용 하단 닫기 바
+  Widget _backBar(GPhase to, {String label = '닫기'}) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+        child: _bigBtn('✕  $label', P.panel, () => setState(() => world.phase = to), dark: false),
+      );
+
+  // 리스트형 오버레이 공용 골격 (스크림+헤더+본문+닫기) — 통일성
+  Widget _ovl(String icon, String title, List<Widget> body, GPhase backTo,
+          {bool fangs = true, String backLabel = '닫기'}) =>
+      Container(
+        color: const Color(0xF20A0806),
+        child: SafeArea(
+          child: Column(children: [
+            _ohead(icon, title, fangs: fangs),
+            Expanded(
+                child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), children: body)),
+            _backBar(backTo, label: backLabel),
+          ]),
+        ),
+      );
+
+  // 네비 타일 (허브 그리드) — 직관적 아이콘 타일
+  Widget _navTile(String icon, String title, Color accent, VoidCallback onTap, {String sub = ''}) =>
+      GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 98,
+          height: 92,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: P.panel,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: accent.withOpacity(0.55), width: 1.4),
+          ),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Text(icon, style: const TextStyle(fontSize: 27)),
+            const SizedBox(height: 6),
+            Text(title, style: TextStyle(color: accent, fontSize: 13, fontWeight: FontWeight.bold)),
+            if (sub.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Text(sub, style: const TextStyle(color: P.muted, fontSize: 9)),
+              ),
+          ]),
+        ),
+      );
+
+  // 허브 타일 그리드 (타이틀·일시정지 공용) — 일관된 메뉴 진입
+  Widget _hubGrid({required GPhase from}) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      alignment: WrapAlignment.center,
+      children: [
+        _navTile('💪', '단련', P.gold, () => setState(() {
+              world.shopReturn = from;
+              world.phase = GPhase.shop;
+            }), sub: '영구 강화'),
+        _navTile('🛡', '장비', P.cyan, () => setState(() {
+              world.statusReturn = from;
+              world.phase = GPhase.status;
+            }), sub: '능력치'),
+        _navTile('🎒', '창고', P.green, () => setState(() {
+              world.statusReturn = from;
+              world.phase = GPhase.inventory;
+            }), sub: '장비 획득'),
+        _navTile('🏆', '업적', P.goldSoft, () => setState(() {
+              world.statusReturn = from;
+              world.phase = GPhase.achieve;
+            }), sub: '${world.achieved.length}/${kAch.length}'),
+        _navTile('🎨', '무늬', P.purple, () => setState(() {
+              world.statusReturn = from;
+              world.phase = GPhase.skins;
+            }), sub: '${world.ownedSkins.length}/${kSkins.length}'),
+        _navTile('⚙', '설정', P.muted, () => setState(() {
+              world.statusReturn = from;
+              world.phase = GPhase.options;
+            })),
+      ],
+    );
+  }
 }
 
 // =============================================================================
@@ -3764,9 +3797,10 @@ class WorldPainter extends CustomPainter {
           Paint()..color = w.flashCol.withOpacity((w.flashT * 0.4).clamp(0.0, 0.32)));
     }
 
-    // 방향키 — 옵션 위치(좌/중/우). 노브는 진행 방향 반영. (플레이 중에만)
+    // 방향키 — 옵션 위치. 기본=엄지존(가운데-오른쪽, 검증된 오른손 엄지 자연 위치). 노브는 진행 방향.
     if (w.phase != GPhase.playing) return;
-    final jcx = w.joyPos == 0 ? 74.0 : (w.joyPos == 2 ? size.width - 74.0 : size.width / 2);
+    final jcx =
+        w.joyPos == 0 ? size.width * 0.32 : (w.joyPos == 2 ? size.width - 70.0 : size.width * 0.66);
     final jx = jcx, jy = size.height - 78.0, baseR = 46.0;
     canvas.drawCircle(Offset(jx, jy), baseR,
         Paint()..color = Colors.white.withOpacity(w.jActive ? 0.10 : 0.05));
