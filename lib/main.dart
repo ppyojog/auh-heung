@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-8';
+const String kSaveVer = 'v2026.06.13-9';
 
 void main() => runApp(const SurvivorApp());
 
@@ -2764,28 +2764,26 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ── 메인화면 (스크롤 없음 · 한 화면 · 시스템은 버튼으로 화면 전환) ──
+  // ── 메인화면(소굴) — 트렌디 레이아웃: 상단 상태 / 좌·우 메뉴 레일 / 중앙 캐릭터 / 맨 아래 생존시작 ──
   Widget _title() {
     final sel = kChars[world.charIndex.clamp(0, kChars.length - 1)];
     return Container(
       width: double.infinity,
       height: double.infinity,
-      color: Colors.black.withOpacity(0.55),
+      color: Colors.black.withOpacity(0.5),
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-          child: Column(children: [
-            // 상단 상태 바
-            _titleTopBar(),
-            // 중앙 히어로 + 로고 (남는 공간 차지 · 작은 화면에선 자동 축소)
-            Expanded(
-              child: Center(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+        child: Stack(children: [
+          // 상단 상태 바
+          Positioned(top: 4, left: 0, right: 0, child: Center(child: _titleTopBar())),
+          // 중앙 캐릭터 + 로고 (살짝 위)
+          Align(
+            alignment: const Alignment(0, -0.12),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
                 SizedBox(
-                  width: 132,
-                  height: 132,
+                  width: 150,
+                  height: 150,
                   child: CustomPaint(painter: HeroPainter(world.titleClock)),
                 ),
                 const SizedBox(height: 4),
@@ -2798,7 +2796,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   child: const Text('어 흥',
                       style: TextStyle(
                           color: Colors.white,
-                          fontSize: 46,
+                          fontSize: 50,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 6,
                           height: 1.0,
@@ -2812,7 +2810,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     style: const TextStyle(
                         color: P.goldSoft, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
                 if (world.dailyJustClaimed) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                     decoration: BoxDecoration(
@@ -2824,32 +2822,111 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                         style: TextStyle(color: P.goldSoft, fontSize: 11.5, fontWeight: FontWeight.bold)),
                   ),
                 ],
-                  ]),
-                ),
+              ]),
+            ),
+          ),
+          // 좌측 메뉴 레일 (성장/장비 계열)
+          Positioned(
+            left: 6,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                _railBtn('💪', '단련', P.gold, () => setState(() {
+                      world.shopReturn = GPhase.title;
+                      world.phase = GPhase.shop;
+                    })),
+                _railBtn('🛡', '장비', P.cyan, () => setState(() {
+                      world.statusReturn = GPhase.title;
+                      world.phase = GPhase.status;
+                    })),
+                _railBtn('🎒', '창고', P.green, () => setState(() {
+                      _gearFilter = 0;
+                      world.statusReturn = GPhase.title;
+                      world.phase = GPhase.inventory;
+                    })),
+                _railBtn('⚒', '대장간', const Color(0xFFE8702E), () => setState(() {
+                      _gearFilter = 0;
+                      world.statusReturn = GPhase.title;
+                      world.phase = GPhase.forge;
+                    })),
+              ]),
+            ),
+          ),
+          // 우측 메뉴 레일 (수집/정보 계열)
+          Positioned(
+            right: 6,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                _railBtn('🏆', '업적', P.goldSoft, () => setState(() {
+                      world.statusReturn = GPhase.title;
+                      world.phase = GPhase.achieve;
+                    })),
+                _railBtn('🎨', '무늬', P.purple, () => setState(() {
+                      world.statusReturn = GPhase.title;
+                      world.phase = GPhase.skins;
+                    })),
+                _railBtn('📢', '공지', P.cyan, () => setState(() => world.phase = GPhase.notice)),
+                _railBtn('⚙', '설정', P.muted, () => setState(() {
+                      world.statusReturn = GPhase.title;
+                      world.phase = GPhase.options;
+                    })),
+              ]),
+            ),
+          ),
+          // 맨 아래: 사냥터 스테퍼 + 생존 시작 CTA + 초기화
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 8,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (world.maxStage > 1) _stageStepper(),
+              if (world.maxStage > 1) const SizedBox(height: 8),
+              _ctaButton(world.maxStage > 1 ? '⚔  STAGE ${world.startStage}  생존 시작' : '⚔  생 존  시 작',
+                  () => setState(() => world.startGame(atStage: world.startStage))),
+              const SizedBox(height: 6),
+              GestureDetector(
+                onTap: _confirmReset,
+                child: Text('🗑  세이브 초기화 (테스트)',
+                    style: TextStyle(
+                        color: P.muted.withOpacity(0.6),
+                        fontSize: 10.5,
+                        decoration: TextDecoration.underline)),
               ),
-            ),
-            // 사냥터 선택(콤팩트 스테퍼) + CTA
-            if (world.maxStage > 1) _stageStepper(),
-            if (world.maxStage > 1) const SizedBox(height: 10),
-            _ctaButton(world.maxStage > 1 ? '⚔  STAGE ${world.startStage}  생존 시작' : '⚔  생 존  시 작',
-                () => setState(() => world.startGame(atStage: world.startStage))),
-            const SizedBox(height: 12),
-            // 시스템 진입 (버튼 → 화면 전환). 스크롤 없이 한 화면.
-            SizedBox(width: 340, child: _hubGrid(from: GPhase.title)),
-            const SizedBox(height: 6),
-            GestureDetector(
-              onTap: _confirmReset,
-              child: Text('🗑  세이브 초기화 (테스트)',
-                  style: TextStyle(
-                      color: P.muted.withOpacity(0.7),
-                      fontSize: 11,
-                      decoration: TextDecoration.underline)),
-            ),
-          ]),
-        ),
+            ]),
+          ),
+        ]),
       ),
     );
   }
+
+  // 좌·우 메뉴 레일 버튼 (아이콘 + 라벨)
+  Widget _railBtn(String icon, String label, Color accent, VoidCallback onTap) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 62,
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [accent.withOpacity(0.22), Colors.black.withOpacity(0.4)],
+            ),
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: accent.withOpacity(0.6), width: 1.4),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 6)],
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(icon, style: const TextStyle(fontSize: 24)),
+            const SizedBox(height: 2),
+            Text(label,
+                style: TextStyle(color: accent, fontSize: 10, fontWeight: FontWeight.bold)),
+          ]),
+        ),
+      );
 
   // 메인 상단 바 — 송곳니/환생/최고기록/최고스테이지 칩
   Widget _titleTopBar() {
