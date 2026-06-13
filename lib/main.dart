@@ -434,7 +434,11 @@ class World {
   GPhase phase = GPhase.title;
 
   double w = 0, h = 0; // 아레나 크기
-  double time = 0; // 생존 시간(초)
+  double time = 0; // 생존 시간(초) — 기록·마일스톤·HUD 시계용(0부터)
+  // 적 스케일 시간 = 생존시간 + head-start(시작 스테이지까지 자연 도달에 걸리는 시간).
+  //  → 높은 스테이지에서 시작하면 "그 스테이지까지 플레이한 상태"와 동일한 강함으로 시작.
+  double _headStart = 0;
+  double get scaleT => time + _headStart;
   int kills = 0;
   int _mileShown = 0; // 생존 마일스톤 연출 카운터
 
@@ -563,6 +567,14 @@ class World {
   void _applyStageDiff() => diff = diffForStage(stage);
   // 다음 스테이지까지 시간 — 초반은 짧게(빠른 진행감), 갈수록 길어짐
   double _stageDuration(int s) => (13.0 + s * 2.2).clamp(13.0, 38.0).toDouble();
+  // 스테이지 s까지 자연 도달에 걸리는 누적 시간 → 시작 시 적 스케일 head-start로 사용
+  double _stageHeadStart(int s) {
+    double t = 0;
+    for (int i = 1; i < s; i++) {
+      t += _stageDuration(i);
+    }
+    return t;
+  }
 
   // 타이니 메뉴에서 스테이지 ±조정 — 도달한 최고 스테이지까지만 (클리어한 곳만 선택)
   void setStage(int s) {
@@ -820,6 +832,7 @@ class World {
     stage = (atStage ?? startStage).clamp(1, maxStage); // 선택한 시작 스테이지에서 출발
     pendingStage = stage;
     startStage = stage;
+    _headStart = _stageHeadStart(stage); // 높은 스테이지 시작 = 그만큼 적 스케일 당겨오기
     _stageT = _stageDuration(stage);
     _applyStageDiff();
     jActive = false;
@@ -1026,11 +1039,11 @@ class World {
     }
     spawnT -= dt;
     if (spawnT > 0) return;
-    // 스폰 완화 — 간격 살짝 늘리고 동시 수 증가도 더 천천히(난이도 하향)
-    final interval = max(0.6, 2.2 - time * 0.010).toDouble();
+    // 스폰 완화 — 간격 살짝 늘리고 동시 수 증가도 더 천천히(난이도 하향). 스케일은 scaleT 기준.
+    final interval = max(0.6, 2.2 - scaleT * 0.010).toDouble();
     spawnT = interval;
     if (enemies.length > 110) return;
-    final count = 1 + (time ~/ 56);
+    final count = 1 + (scaleT ~/ 56);
     for (int i = 0; i < count; i++) {
       if (enemies.length > 110) break;
       _spawnOne();
@@ -1063,32 +1076,32 @@ class World {
       t = EType.shooter; // 원거리
     } else if (stage >= 3 && roll < 0.34) {
       t = EType.splitter; // 분열
-    } else if (time > 70 && roll < 0.46) {
+    } else if (scaleT > 70 && roll < 0.46) {
       t = EType.tank;
-    } else if (time > 26 && roll < 0.62) {
+    } else if (scaleT > 26 && roll < 0.62) {
       t = EType.fast;
     } else if (stage >= 2 && roll < 0.80) {
       t = EType.swarm; // 떼거리
     }
-    // 적 체력·피해 전반 하향(너무 높다는 피드백) — base 계수↓ + 접촉피해 계수↓
-    final base = (8 + time * 0.42) * diff;
+    // 적 체력·피해 전반 하향(너무 높다는 피드백) — base 계수↓ + 접촉피해 계수↓. 스케일은 scaleT 기준.
+    final base = (8 + scaleT * 0.42) * diff;
     Enemy e;
     if (t == EType.fast) {
-      e = Enemy(_eid++, x, y, base * 0.62, base * 0.62, 72 + time * 0.17, (3.2 + time * 0.024) * diff, 9, t);
+      e = Enemy(_eid++, x, y, base * 0.62, base * 0.62, 72 + scaleT * 0.17, (3.2 + scaleT * 0.024) * diff, 9, t);
     } else if (t == EType.swarm) {
-      e = Enemy(_eid++, x, y, base * 0.4, base * 0.4, 90 + time * 0.2, (2.4 + time * 0.016) * diff, 7, t);
+      e = Enemy(_eid++, x, y, base * 0.4, base * 0.4, 90 + scaleT * 0.2, (2.4 + scaleT * 0.016) * diff, 7, t);
     } else if (t == EType.tank) {
-      e = Enemy(_eid++, x, y, base * 2.8, base * 2.8, 30 + time * 0.05, (7 + time * 0.04) * diff, 18, t);
+      e = Enemy(_eid++, x, y, base * 2.8, base * 2.8, 30 + scaleT * 0.05, (7 + scaleT * 0.04) * diff, 18, t);
     } else if (t == EType.splitter) {
-      e = Enemy(_eid++, x, y, base * 1.25, base * 1.25, 40 + time * 0.08, (4 + time * 0.024) * diff, 14, t);
+      e = Enemy(_eid++, x, y, base * 1.25, base * 1.25, 40 + scaleT * 0.08, (4 + scaleT * 0.024) * diff, 14, t);
     } else if (t == EType.bomber) {
-      e = Enemy(_eid++, x, y, base * 0.85, base * 0.85, 54 + time * 0.12, (3.2 + time * 0.016) * diff, 13, t);
+      e = Enemy(_eid++, x, y, base * 0.85, base * 0.85, 54 + scaleT * 0.12, (3.2 + scaleT * 0.016) * diff, 13, t);
     } else if (t == EType.shooter) {
-      final se = Enemy(_eid++, x, y, base * 0.75, base * 0.75, 26 + time * 0.05, (3.2 + time * 0.016) * diff, 11, t);
+      final se = Enemy(_eid++, x, y, base * 0.75, base * 0.75, 26 + scaleT * 0.05, (3.2 + scaleT * 0.016) * diff, 11, t);
       se.atkT = 0.8 + rng.nextDouble() * 1.6; // 첫 사격 분산
       e = se;
     } else {
-      e = Enemy(_eid++, x, y, base, base, 44 + time * 0.12, (3.6 + time * 0.024) * diff, 11, t);
+      e = Enemy(_eid++, x, y, base, base, 44 + scaleT * 0.12, (3.6 + scaleT * 0.024) * diff, 11, t);
     }
     enemies.add(e);
   }
@@ -1096,8 +1109,8 @@ class World {
   void _spawnBoss() {
     final x = px + (rng.nextBool() ? 1 : -1) * w * 0.5;
     final y = py + (rng.nextBool() ? 1 : -1) * h * 0.4;
-    final base = (240 + time * 6) * diff;
-    enemies.add(Enemy(_eid++, x.clamp(0.0, w), y.clamp(0.0, h), base, base, 40, (22 + time * 0.08) * diff, 30, EType.boss));
+    final base = (240 + scaleT * 6) * diff;
+    enemies.add(Enemy(_eid++, x.clamp(0.0, w), y.clamp(0.0, h), base, base, 40, (22 + scaleT * 0.08) * diff, 30, EType.boss));
     pulses.add(Pulse(px, py, 200, 0.6, P.blood));
     _float(px, py - 60, '⚠ 의회의 거대 맹수 강림', P.red, 18);
     _shakeAdd(12);
@@ -1465,17 +1478,17 @@ class World {
         }
         // 분열 — 죽으면 작은 떼거리 둘로 갈라짐
         if (e.type == EType.splitter) {
-          final cb = (9 + time * 0.5) * diff * 0.45;
+          final cb = (8 + scaleT * 0.42) * diff * 0.45;
           for (int s = 0; s < 2; s++) {
             final ang = rng.nextDouble() * 6.2831853;
             newborn.add(Enemy(_eid++, e.x + cos(ang) * 14, e.y + sin(ang) * 14, cb, cb,
-                88 + time * 0.12, (3.5 + time * 0.02) * diff, 7, EType.swarm));
+                88 + scaleT * 0.12, (3.5 + scaleT * 0.02) * diff, 7, EType.swarm));
           }
         }
         // 자폭 — 죽을 때 주변 폭발(플레이어 피해 + 연출)
         if (e.type == EType.bomber) {
           const er = 72.0;
-          final ed = (16 + time * 0.1) * diff;
+          final ed = (16 + scaleT * 0.1) * diff;
           final pd = sqrt((px - e.x) * (px - e.x) + (py - e.y) * (py - e.y));
           if (pd < er + pr) hp -= ed * armorMult;
           pulses.add(Pulse(e.x, e.y, er, 0.4, P.red));
