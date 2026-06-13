@@ -419,7 +419,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, forge, travel, options, diag, morph, notice, den }
+enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, forge, travel, options, diag, morph, notice, den, curse }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -457,6 +457,23 @@ const List<DenUp> kDen = [
   DenUp('instinct', '🐯', '본능 각성', '출격 시 시작 강화 +1', 8, 70, 1.5, 1),
   DenUp('xp', '📖', '지혜의 굴', '경험치 획득 +7%', 8, 45, 1.38, 0.07),
   DenUp('fang', '🦷', '전리품 창고', '송곳니 획득 +12%', 10, 45, 1.36, 0.12),
+];
+
+// 시련(Curse) — 출격 전 켜는 자율 난이도. 켤수록 적이 강해지지만 송곳니·경험치 보상이 커진다.
+//  (검증된 로그라이트 자기조절 난이도: 하데스 Heat, 뱀서 Inverse) — 난이도가 곧 '플레이어의 전략적 선택'.
+class Curse {
+  final String id, icon, name, desc;
+  final double reward; // 활성 시 보상 배수에 더해지는 양
+  const Curse(this.id, this.icon, this.name, this.desc, this.reward);
+}
+
+const List<Curse> kCurses = [
+  Curse('hp', '🩸', '굶주린 의회', '적 체력 +45%', 0.30),
+  Curse('dmg', '⚔', '잔혹한 사냥', '적 공격 +45%', 0.30),
+  Curse('flood', '🌊', '범람', '적이 40% 더 자주 몰려온다', 0.30),
+  Curse('swift', '🏃', '광란', '적 이동속도 +30%', 0.25),
+  Curse('glass', '💀', '유리 몸', '내 최대 체력 −40%', 0.35),
+  Curse('hunted', '🕒', '쫓기는 자', '거대 맹수가 2배 자주 강림', 0.25),
 ];
 
 // 업적 — 달성 시 송곳니 보상 + 영구 기록(리텐션·목표)
@@ -939,6 +956,29 @@ class World {
     return true;
   }
 
+  // ── 시련(Curse) — 자율 난이도(리스크↑ 보상↑) ──
+  final Set<String> curses = {};
+  bool cur(String id) => curses.contains(id);
+  void toggleCurse(String id) {
+    if (!curses.add(id)) curses.remove(id);
+    _saveMeta();
+  }
+
+  double get curseReward {
+    double r = 1.0;
+    for (final c in kCurses) {
+      if (curses.contains(c.id)) r += c.reward;
+    }
+    return r;
+  }
+
+  double get curseEnemyHp => cur('hp') ? 1.45 : 1.0;
+  double get curseEnemyDmg => cur('dmg') ? 1.45 : 1.0;
+  double get curseEnemySpd => cur('swift') ? 1.30 : 1.0;
+  double get curseSpawn => cur('flood') ? 0.70 : 1.0; // 스폰 간격 배수(작을수록 자주)
+  double get curseBoss => cur('hunted') ? 0.50 : 1.0; // 보스 간격 배수
+  double get curseMaxHp => cur('glass') ? 0.60 : 1.0;
+
   bool buyMeta(String id) {
     final m = kMeta.firstWhere((e) => e.id == id);
     if (metaLv(id) >= m.maxLv) return false;
@@ -1032,7 +1072,8 @@ class World {
   double get maxHp =>
       (baseMaxHp + 25 * hideLv + 15 * metaLv('hp') + denVal('hp') + gearStat('hp') + portraitBonus('hp')) *
       charHp *
-      prestigeMult;
+      prestigeMult *
+      curseMaxHp;
   double get speed =>
       baseSpeed *
       (1 + 0.10 * windLv + 0.04 * metaLv('spd') + 0.01 * gearStat('spd') + 0.01 * portraitBonus('spd')) *
@@ -1061,7 +1102,7 @@ class World {
   // 받는 피해 배수 — 특수기(강철 가죽) + 소굴 요새. 0.35 밑으로는 안 내려가게(밸런스).
   double get armorMult => ((sp('armor') ? 0.78 : 1.0) * (1 - denVal('armor'))).clamp(0.35, 1.0);
   // 경험치 배수 — 스테이지 보너스 + 소굴 지혜의 굴
-  double get xpMult => (1.0 + (stage - 1) * 0.1) * (1 + denVal('xp'));
+  double get xpMult => (1.0 + (stage - 1) * 0.1) * (1 + denVal('xp')) * curseReward;
   bool get rageReady => rage >= rageMax;
 
   void toggleMute() => sfx.muted = !sfx.muted;
@@ -1366,13 +1407,13 @@ class World {
   void _spawn(double dt) {
     bossT -= dt;
     if (bossT <= 0) {
-      bossT = max(40.0, 90.0 - stage * 1.6); // 스테이지 오를수록 보스 더 자주(엔드 압박)
+      bossT = max(40.0, 90.0 - stage * 1.6) * curseBoss; // 스테이지·시련으로 보스 주기↓
       _spawnBoss();
     }
     spawnT -= dt;
     if (spawnT > 0) return;
     // 속도감 — 자주·많이(화면 가득). 단 성능 위해 동시 수 상한 보수적으로(개체는 약해 즉사).
-    final interval = max(0.34, 1.7 - scaleT * 0.012).toDouble();
+    final interval = max(0.34, 1.7 - scaleT * 0.012).toDouble() * curseSpawn;
     spawnT = interval;
     if (enemies.length > 96) return;
     final count = 1 + (scaleT ~/ 44);
@@ -1416,7 +1457,7 @@ class World {
       t = EType.swarm; // 떼거리
     }
     // 적 체력 — scaleT·diff로 끝없이 증가(고스테이지일수록 탱키 → 범위기술이 즉삭 못함, 지속 긴장).
-    final base = (7 + scaleT * 0.5) * diff;
+    final base = (7 + scaleT * 0.5) * diff * curseEnemyHp;
     Enemy e;
     if (t == EType.fast) {
       e = Enemy(_eid++, x, y, base * 0.62, base * 0.62, 72 + scaleT * 0.17, (3.2 + scaleT * 0.024) * diff, 9, t);
@@ -1609,8 +1650,8 @@ class World {
         sm *= 0.4; // 서리 둔화
       }
       if (d > 0.1) {
-        e.x += dx / d * e.speed * sm * dt;
-        e.y += dy / d * e.speed * sm * dt;
+        e.x += dx / d * e.speed * sm * curseEnemySpd * dt;
+        e.y += dy / d * e.speed * sm * curseEnemySpd * dt;
       }
       if (e.flash > 0) e.flash -= dt * 4;
       // 원거리 적 — 주기적으로 플레이어를 향해 투사체 발사
@@ -1639,7 +1680,7 @@ class World {
       }
       final rr = pr + 5;
       if ((b.x - px) * (b.x - px) + (b.y - py) * (b.y - py) <= rr * rr) {
-        hp -= b.dmg * armorMult;
+        hp -= b.dmg * armorMult * curseEnemyDmg;
         b.dead = true;
         contactCdView = 0.12;
         _hapticHit = true;
@@ -1789,7 +1830,7 @@ class World {
     for (final e in enemies) {
       final rr = e.radius + pr;
       if ((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py) <= rr * rr) {
-        hp -= e.dmg * dt * armorMult; // 접촉 피해(고스테이지일수록 diff로 커져 위협)
+        hp -= e.dmg * dt * armorMult * curseEnemyDmg; // 접촉 피해(diff·시련으로 커져 위협)
         contactCdView = 0.12;
         _hapticHit = true;
         _shakeAdd(3);
@@ -1842,7 +1883,7 @@ class World {
           const er = 72.0;
           final ed = (16 + scaleT * 0.1) * diff;
           final pd = sqrt((px - e.x) * (px - e.x) + (py - e.y) * (py - e.y));
-          if (pd < er + pr) hp -= ed * armorMult;
+          if (pd < er + pr) hp -= ed * armorMult * curseEnemyDmg;
           pulses.add(Pulse(e.x, e.y, er, 0.4, P.red));
           _float(e.x, e.y - e.radius, '폭발!', P.red, 16);
           _shakeAdd(6);
@@ -2110,6 +2151,7 @@ class World {
     runFangs = ((kills + time.floor() + level * 8) *
             (1 + 0.12 * metaLv('gain')) *
             (1 + denVal('fang')) *
+            curseReward *
             prestigeFangMult)
         .round();
     fangs += runFangs;
@@ -2232,6 +2274,7 @@ class World {
       m.forEach((k, v) => meta[k as String] = v as int);
       final dn = (j['den'] as Map?) ?? {};
       dn.forEach((k, v) => den[k as String] = v as int);
+      curses.addAll(((j['curses'] as List?) ?? []).map((e) => e as String));
       achieved.addAll(((j['ach'] as List?) ?? []).map((e) => e as String));
       ownedSkins.addAll(((j['skins'] as List?) ?? []).map((e) => e as String));
       skin = j['skin'] as String? ?? 'default';
@@ -2259,6 +2302,7 @@ class World {
         'fangs': fangs,
         'up': meta,
         'den': den,
+        'curses': curses.toList(),
         'ach': achieved.toList(),
         'skins': ownedSkins.toList(),
         'skin': skin,
@@ -2439,6 +2483,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.shop) _shopOverlay(),
             if (world.phase == GPhase.den) _denOverlay(),
+            if (world.phase == GPhase.curse) _curseOverlay(),
             if (world.phase == GPhase.achieve) _achieveOverlay(),
             if (world.phase == GPhase.skins) _skinsOverlay(),
             if (world.phase == GPhase.status) _statusOverlay(),
@@ -2478,6 +2523,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               const SizedBox(width: 6),
               _tag('🌊 STAGE ${world.stage}', color: world.threatColor),
               const Spacer(),
+              if (world.curses.isNotEmpty) ...[
+                _tag('🔥 ${world.curses.length}', color: P.red),
+                const SizedBox(width: 6),
+              ],
               _tag('☠ ${world.kills}', color: P.red),
             ]),
             const SizedBox(height: 8),
@@ -3033,6 +3082,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             right: 0,
             bottom: 8,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
+              _curseChipButton(),
+              const SizedBox(height: 7),
               if (world.maxStage > 1) _stageStepper(),
               if (world.maxStage > 1) const SizedBox(height: 8),
               _ctaButton(world.maxStage > 1 ? '⚔  STAGE ${world.startStage}  생존 시작' : '⚔  생 존  시 작',
@@ -3125,6 +3176,34 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         ],
       ),
     ]);
+  }
+
+  // 시련 진입 칩 — 활성 개수 + 보상 배수 표시(출격 전 자율 난이도 설정)
+  Widget _curseChipButton() {
+    final n = world.curses.length;
+    final rewardPct = ((world.curseReward - 1) * 100).round();
+    final active = n > 0;
+    return GestureDetector(
+      onTap: () => setState(() => world.phase = GPhase.curse),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? P.red.withOpacity(0.18) : Colors.black.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: active ? P.red.withOpacity(0.8) : P.line),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(active ? '🔥 시련 $n개' : '🔥 시련 설정',
+              style: TextStyle(
+                  color: active ? P.red : P.muted, fontSize: 12.5, fontWeight: FontWeight.bold)),
+          if (active) ...[
+            const SizedBox(width: 8),
+            Text('보상 +$rewardPct%',
+                style: const TextStyle(color: P.goldSoft, fontSize: 12, fontWeight: FontWeight.bold)),
+          ],
+        ]),
+      ),
+    );
   }
 
   // 콤팩트 사냥터 스테퍼 (시작 STAGE ± 선택)
@@ -3330,6 +3409,66 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 ),
               ),
             ]),
+          ),
+        );
+      }),
+    ], GPhase.title);
+  }
+
+  // ── 시련(Curse) — 자율 난이도 선택(리스크↑ 보상↑) ──
+  Widget _curseOverlay() {
+    final rewardPct = ((world.curseReward - 1) * 100).round();
+    return _ovl('🔥', '시련  ·  보상 +$rewardPct%', [
+      const Padding(
+        padding: EdgeInsets.fromLTRB(2, 0, 2, 8),
+        child: Text('켤수록 적이 강해지지만 송곳니·경험치 보상이 커진다. 감당할 수 있는 만큼이 당신의 실력.',
+            style: TextStyle(color: P.muted, fontSize: 11.5, height: 1.35)),
+      ),
+      ...kCurses.map((c) {
+        final on = world.cur(c.id);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 9),
+          child: GestureDetector(
+            onTap: () => setState(() => world.toggleCurse(c.id)),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: on ? P.red.withOpacity(0.16) : P.panel,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: on ? P.red : P.line, width: on ? 2 : 1),
+              ),
+              child: Row(children: [
+                Text(c.icon, style: const TextStyle(fontSize: 26)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(c.name,
+                        style: TextStyle(
+                            color: on ? P.red : P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text(c.desc, style: const TextStyle(color: P.muted, fontSize: 11.5)),
+                  ]),
+                ),
+                const SizedBox(width: 10),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Text('보상 +${(c.reward * 100).round()}%',
+                      style: const TextStyle(color: P.goldSoft, fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 3),
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: on ? P.red : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: on ? P.red : P.muted, width: 2),
+                    ),
+                    child: on
+                        ? const Icon(Icons.check, color: Colors.white, size: 20)
+                        : null,
+                  ),
+                ]),
+              ]),
+            ),
           ),
         );
       }),
