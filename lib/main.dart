@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-11';
+const String kSaveVer = 'v2026.06.13-12';
 
 void main() => runApp(const SurvivorApp());
 
@@ -116,6 +116,14 @@ class Pulse {
   Pulse(this.x, this.y, this.maxR, this.life, this.color)
       : r = 0,
         maxLife = life;
+}
+
+// 가시밭 — 솟아오르는 가시(삼각 기둥) 지대 이펙트
+class SpikeFx {
+  final double x, y, radius;
+  double life;
+  final double maxLife;
+  SpikeFx(this.x, this.y, this.radius, this.life) : maxLife = life;
 }
 
 class FloatText {
@@ -718,6 +726,7 @@ class World {
   final List<Pulse> pulses = [];
   final List<FloatText> floats = []; // 데미지 숫자 등
   final List<LineFx> lines = []; // 벼락 등 선형 이펙트
+  final List<SpikeFx> spikeFx = []; // 가시밭 솟음 이펙트
   double shake = 0; // 화면 흔들림 강도
   int _eid = 0;
 
@@ -1048,6 +1057,7 @@ class World {
     pulses.clear();
     floats.clear();
     lines.clear();
+    spikeFx.clear();
     shake = 0;
     px = w / 2;
     py = h / 2;
@@ -1494,7 +1504,8 @@ class World {
             _dealHit(e, dmg, P.green, 12);
           }
         }
-        pulses.add(Pulse(ox, oy, radius, 0.5, P.green));
+        // 솟아오르는 가시 지대(삼각 기둥) — 이름에 맞는 연출
+        if (spikeFx.length < 8) spikeFx.add(SpikeFx(ox, oy, radius, 0.6));
       }
     }
     // 포효 (충격파 — 즉발 광역)
@@ -1935,6 +1946,10 @@ class World {
       l.life -= dt;
     }
     lines.removeWhere((l) => l.life <= 0);
+    for (final s in spikeFx) {
+      s.life -= dt;
+    }
+    spikeFx.removeWhere((s) => s.life <= 0);
     if (shake > 0) shake = max(0, shake - dt * 26);
   }
 
@@ -4604,6 +4619,36 @@ class WorldPainter extends CustomPainter {
       _glow(canvas, pk.x, pk.y, 11.0, col, core: 0.5 * blink);
       final tp = _emoji(ic, 18);
       tp.paint(canvas, Offset(pk.x - tp.width / 2, pk.y - tp.height / 2));
+    }
+
+    // 가시밭 — 솟아오르는 가시(삼각 기둥) 지대
+    for (final s in w.spikeFx) {
+      final a = (s.life / s.maxLife).clamp(0.0, 1.0); // 1→0
+      final p = 1 - a; // 진행 0→1
+      final rise = p < 0.22 ? p / 0.22 : (p > 0.78 ? (1 - p) / 0.22 : 1.0);
+      canvas.drawCircle(Offset(s.x, s.y), s.radius, Paint()..color = P.green.withOpacity(0.07 * rise));
+      final cnt = (s.radius / 7).round().clamp(6, 20);
+      final body = Paint()..color = const Color(0xFF1E5E2A);
+      final edge = Paint()
+        ..color = P.green.withOpacity(0.9)
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round;
+      for (int i = 0; i < cnt; i++) {
+        final ang = i * 2.39996;
+        final dist = s.radius * sqrt((i * 0.618034) % 1.0);
+        final px = s.x + cos(ang) * dist, by = s.y + sin(ang) * dist;
+        final h = (12 + (i % 3) * 6) * rise;
+        if (h < 1) continue;
+        final w0 = 4.5 + (i % 2) * 1.5;
+        final tri = Path()
+          ..moveTo(px - w0, by)
+          ..lineTo(px, by - h)
+          ..lineTo(px + w0, by)
+          ..close();
+        canvas.drawPath(tri, body);
+        canvas.drawLine(Offset(px, by - h), Offset(px - w0, by), edge); // 밝은 면
+        canvas.drawCircle(Offset(px, by - h), 1.6, Paint()..color = Colors.white.withOpacity(0.8 * rise)); // 끝 글린트
+      }
     }
 
     // 포효/펄스 (발광 링)
