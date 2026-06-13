@@ -496,10 +496,7 @@ class World {
   double titleClock = 0; // 타이틀(메인) 배경·로고 애니메이션용 시계
   int kills = 0;
   int _mileShown = 0; // 생존 마일스톤 연출 카운터
-  // ── 게임필(juice) — 검증된 기법: 크리티컬·히트스톱·콤보·스크린플래시 ──
-  int combo = 0; // 연속 처치 콤보(짧은 시간 내 처치 누적)
-  double comboT = 0; // 콤보 유지 타이머
-  int _comboMileShown = 0; // 콤보 마일스톤 연출
+  // ── 게임필(juice) — 검증된 기법: 크리티컬·히트스톱·스크린플래시 ──
   double _hitStop = 0; // 히트스톱(타격 순간 미세 정지)
   double _hsCd = 0; // 히트스톱 쿨다운(잦은 크리로 슬로모 누적 방지)
   double flashT = 0; // 스크린 플래시 잔여
@@ -528,7 +525,6 @@ class World {
   int rebuildRate = 0; // 직전3초 위젯 리빌드 횟수(60fps 매프레임이면 ~180, 스로틀 정상이면 ~36)
 
   double get critChance => 0.12 + 0.02 * metaLv('crit'); // 기본 12% + 메타 치명 강화
-  double get comboDmg => 1.0 + (combo > 60 ? 60 : combo) * 0.004; // 콤보 공격 보너스(최대 +24%)
   // 히트스톱 발동 — 작은(크리)건 쿨다운 제한, 큰 이벤트(force)는 항상.
   void _hs(double v, {bool force = false}) {
     if (!force && _hsCd > 0) return;
@@ -1006,7 +1002,6 @@ class World {
   double get dmgMult =>
       (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + 0.01 * gearStat('dmg') + 0.01 * portraitBonus('dmg') + devourAtk) *
       charDmg *
-      comboDmg *
       prestigeMult *
       (berserkT > 0 ? 1.35 : 1.0) *
       (sp('fury') ? 1.25 : 1.0);
@@ -1089,9 +1084,6 @@ class World {
     _heraldCd = 0;
     _lowCd = 0;
     _streakKillMark = 0;
-    combo = 0;
-    comboT = 0;
-    _comboMileShown = 0;
     _hitStop = 0;
     _hsCd = 0;
     flashT = 0;
@@ -1185,14 +1177,6 @@ class World {
     if (_hitStop > 0) {
       _hitStop -= dt;
       dt *= 0.12;
-    }
-    // 콤보 유지/소멸 + 스크린 플래시 소멸
-    if (comboT > 0) {
-      comboT -= dt;
-      if (comboT <= 0) {
-        combo = 0;
-        _comboMileShown = 0;
-      }
     }
     if (flashT > 0) flashT = max(0, flashT - dt * 3.2);
     time += dt;
@@ -1768,14 +1752,6 @@ class World {
         petHappyT = 1.0; // 펫이 기뻐함
         // [포식] 삼켜서 회복 + 성장
         devour += 1;
-        // 콤보 — 연속 처치 누적(짧은 유지창). 높을수록 공격 보너스 + 연출 고조.
-        combo += 1;
-        comboT = 2.4;
-        if (combo >= 10 && combo - _comboMileShown >= 10) {
-          _comboMileShown = combo;
-          sfx.play('level');
-          _hs(0.03);
-        }
         // 엘리트 처치 — 확정 보상(파워업 픽업 + 송곳니) + 큰 연출
         if (e.elite) {
           if (pickups.length < 8) {
@@ -2400,7 +2376,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 world.phase == GPhase.menu) _hud(),
             if (world.phase == GPhase.playing) _rageButton(),
             if (world.phase == GPhase.playing) _tinyCallButton(),
-            if (world.phase == GPhase.playing && world.combo >= 5) _comboDisplay(),
             if (world.optPerf) _perfHud(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.shop) _shopOverlay(),
@@ -2452,11 +2427,58 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             const SizedBox(height: 5),
             // 경험치
             _bar(xpFrac, P.cyan, height: 6),
+            // 내 현재 스킬·강화 상태(경험치 바 밑)
+            _hudSkills(),
           ]),
         ),
       ),
     );
   }
+
+  // 인게임 상태 칩 — 보유 스킬/패시브 레벨 + 특수기. 경험치 바 아래 한눈에.
+  Widget _hudSkills() {
+    final w = world;
+    final chips = <Widget>[];
+    void add(String ic, int lv, [bool evo = false]) {
+      if (lv <= 0) return;
+      chips.add(_hudSkillChip('$ic$lv${evo ? '★' : ''}', evo ? P.gold : Colors.white));
+    }
+
+    add('🪝', w.clawLv, w.clawEvo);
+    add('🦷', w.fangLv, w.fangEvo);
+    add('💢', w.roarLv, w.roarEvo);
+    add('⚡', w.boltLv);
+    add('🌵', w.spikeLv);
+    add('🐅', w.wildLv);
+    add('🛡', w.hideLv);
+    add('🌬', w.windLv);
+    add('🧲', w.hungerLv);
+    add('🔥', w.rageLv);
+    for (final s in kSpecials) {
+      if (w.sp(s.id)) chips.add(_hudSkillChip(s.icon, P.cyan));
+    }
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        alignment: WrapAlignment.center,
+        children: chips,
+      ),
+    );
+  }
+
+  Widget _hudSkillChip(String t, Color c) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.30),
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: P.line.withOpacity(0.6)),
+        ),
+        child: Text(t,
+            style: TextStyle(color: c, fontSize: 10.5, fontWeight: FontWeight.bold, height: 1.0)),
+      );
 
   // ── 성능 진단 HUD (옵션) — FPS + 엔티티 수. 렉 원인 파악용 ──
   Widget _perfHud() {
@@ -2486,40 +2508,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   }
 
   // ── 콤보 카운터 — 연속 처치 고조(검증된 도파민). 콤보 높을수록 색·크기↑ ──
-  Widget _comboDisplay() {
-    final c = world.combo;
-    final col = c >= 40 ? P.red : (c >= 20 ? const Color(0xFFE8702E) : P.gold);
-    // 막 갱신됐을 때 살짝 팝(comboT가 2.4에서 시작해 줄어듦)
-    final fresh = (world.comboT / 2.4).clamp(0.0, 1.0);
-    final pop = 1.0 + (fresh > 0.85 ? (fresh - 0.85) * 1.6 : 0.0);
-    return Positioned(
-      top: 64,
-      left: 0,
-      right: 0,
-      child: IgnorePointer(
-        child: Center(
-          child: Transform.scale(
-            scale: pop,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text('🔥 $c 연속',
-                  style: TextStyle(
-                      color: col,
-                      fontSize: 22 + (c >= 20 ? 6.0 : 0.0),
-                      fontWeight: FontWeight.bold,
-                      shadows: const [Shadow(color: Colors.black, blurRadius: 4)])),
-              Text('공격 +${((world.comboDmg - 1) * 100).round()}%',
-                  style: TextStyle(
-                      color: col.withOpacity(0.9),
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      shadows: const [Shadow(color: Colors.black, blurRadius: 3)])),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
   // ── 타이니 호출 버튼 (시리/빅스비식) — 어흥 버튼 위(좌하단). 불투명 ──
   Widget _tinyCallButton() {
     return Positioned(
@@ -3737,7 +3725,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         '최악프레임 ${w.peakMs.toStringAsFixed(1)}ms | 최근3초 끊김 <45fps ${w.jankCnt}회 / <25fps ${w.jankBad}회\n'
         '프레임분포(3초/총$fTot): 부드러움(≤18ms) ${w.fSmooth} / 보통(≤33) ${w.fMid} / 나쁨(≤50) ${w.fBad} / 심각(>50) ${w.fSevere}\n'
         '위젯리빌드 ${w.rebuildRate}회/3초 (매프레임이면 ~180, 스로틀정상 ~36) | 캐시 숫자${WorldPainter._floatCache.length}/이모지${WorldPainter._emojiCache.length}\n'
-        'phase ${w.phase.name} stage ${w.stage} t ${w.time.toStringAsFixed(0)}s lv ${w.level} combo ${w.combo}\n'
+        'phase ${w.phase.name} stage ${w.stage} t ${w.time.toStringAsFixed(0)}s lv ${w.level}\n'
         '엔티티: 적 ${w.enemies.length} / 탄 ${w.bullets.length} / 적탄 ${w.eBullets.length} / 구슬 ${w.orbs.length} / 픽업 ${w.pickups.length} / 입자 ${w.parts.length} / 펄스 ${w.pulses.length} / 플로트 ${w.floats.length}\n'
         '화면 ${iw}x$ih DPR ${dpr.toStringAsFixed(2)} 물리 ${pw}x$ph | zoom $kZoom | renderer html\n'
         'UA $ua';
