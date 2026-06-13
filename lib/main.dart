@@ -902,6 +902,10 @@ class World {
 
   // 레벨업 강화 선택지
   List<Upgrade> choices = [];
+  // 레벨업 전략 — 리롤(다시 뽑기) / 밴(이번 런 동안 해당 강화 제외) → 빌드를 의도대로 설계
+  int rerolls = 0, banishes = 0;
+  final Set<String> bannedUp = {}; // 이번 런 동안 제외된 강화 아이콘
+  static const Set<String> _evoIcons = {'🌩', '☠', '🌋'};
 
   // 기록
   double bestTime = 0;
@@ -1130,6 +1134,10 @@ class World {
     wildLv = hideLv = windLv = hungerLv = rageLv = 0;
     specials.clear();
     specialChoice = false;
+    // 레벨업 전략 자원 — 런마다 리셋(소굴 지혜의 굴이 높을수록 리롤 추가 보너스)
+    rerolls = 3 + (denLv('xp') ~/ 3);
+    banishes = 2;
+    bannedUp.clear();
     portraitTier = 0;
     morphClock = 0;
     morphFromTier = 0;
@@ -2107,6 +2115,7 @@ class World {
     pool.add(Upgrade('🌬', '바람', '이동 속도 +10% (Lv ${windLv + 1})', () => windLv++));
     pool.add(Upgrade('👅', '굶주림', '구슬 수집 범위 +16 (Lv ${hungerLv + 1})', () => hungerLv++));
     pool.add(Upgrade('🔥', '분노', '공격 속도 +10% (Lv ${rageLv + 1})', () => rageLv++));
+    pool.removeWhere((u) => bannedUp.contains(u.icon)); // 밴된 강화 제외(빌드 집중)
     pool.shuffle(rng);
 
     // 진화는 항상 먼저 노출 + 나머지는 무작위로 채워 3~4개 제시
@@ -2131,6 +2140,25 @@ class World {
       }));
     }
     choices = out;
+  }
+
+  // 리롤 — 현재 선택지를 다시 뽑는다(런당 제한). 특별스킬도 가능.
+  void rerollChoices() {
+    if (rerolls <= 0) return;
+    rerolls--;
+    if (specialChoice) {
+      _openSpecial();
+    } else {
+      _openLevelUp();
+    }
+  }
+
+  // 밴 — 해당 강화를 이번 런 동안 풀에서 제외하고 다시 뽑는다(원치 않는 옵션 정리 → 시너지 집중).
+  void banishUpgrade(Upgrade u) {
+    if (banishes <= 0 || specialChoice || _evoIcons.contains(u.icon)) return;
+    banishes--;
+    bannedUp.add(u.icon);
+    _openLevelUp();
   }
 
   void pick(Upgrade u) {
@@ -4476,41 +4504,100 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               padding: const EdgeInsets.only(bottom: 12),
               child: _upgradeCard(u),
             )),
+        const SizedBox(height: 2),
+        // 전략 — 다시 뽑기(리롤) + 밴 안내
+        Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
+          _luCtl('🎲 다시 뽑기 ${world.rerolls}', world.rerolls > 0,
+              () => setState(() => world.rerollChoices())),
+          if (!world.specialChoice && world.banishes > 0) ...[
+            const SizedBox(width: 10),
+            _luCtl('🚫 밴 ${world.banishes}', false, null, hint: true),
+          ],
+        ]),
       ]),
     );
   }
 
-  // ── 타이니 난이도 선택 대화 ──
-  Widget _upgradeCard(Upgrade u) {
-    return Material(
-      color: P.panel,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => setState(() => world.pick(u)),
+  // 레벨업 컨트롤 버튼(리롤/밴 안내)
+  Widget _luCtl(String label, bool enabled, VoidCallback? onTap, {bool hint = false}) => GestureDetector(
+        onTap: enabled ? onTap : null,
         child: Container(
-          width: 320,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: P.gold.withOpacity(0.7), width: 1.5),
+            color: hint
+                ? Colors.transparent
+                : (enabled ? P.gold.withOpacity(0.16) : Colors.black.withOpacity(0.3)),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+                color: hint
+                    ? P.red.withOpacity(0.6)
+                    : (enabled ? P.gold.withOpacity(0.8) : P.line)),
           ),
-          child: Row(children: [
-            Text(u.icon, style: const TextStyle(fontSize: 30)),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(u.title,
-                    style: const TextStyle(
-                        color: P.goldSoft, fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 3),
-                Text(u.desc, style: const TextStyle(color: P.parch, fontSize: 12.5, height: 1.3)),
-              ]),
+          child: Text(label,
+              style: TextStyle(
+                  color: hint ? P.red : (enabled ? P.goldSoft : P.muted),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold)),
+        ),
+      );
+
+  // ── 강화 카드 (탭=선택, 우상단 🚫=밴) ──
+  Widget _upgradeCard(Upgrade u) {
+    final canBanish =
+        world.banishes > 0 && !world.specialChoice && !World._evoIcons.contains(u.icon);
+    final isEvo = World._evoIcons.contains(u.icon);
+    return Stack(children: [
+      Material(
+        color: P.panel,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => setState(() => world.pick(u)),
+          child: Container(
+            width: 320,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                  color: isEvo ? P.purple.withOpacity(0.9) : P.gold.withOpacity(0.7),
+                  width: isEvo ? 2 : 1.5),
             ),
-          ]),
+            child: Row(children: [
+              Text(u.icon, style: const TextStyle(fontSize: 30)),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(u.title,
+                      style: TextStyle(
+                          color: isEvo ? P.purple : P.goldSoft,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 3),
+                  Text(u.desc, style: const TextStyle(color: P.parch, fontSize: 12.5, height: 1.3)),
+                ]),
+              ),
+            ]),
+          ),
         ),
       ),
-    );
+      if (canBanish)
+        Positioned(
+          right: 4,
+          top: 4,
+          child: GestureDetector(
+            onTap: () => setState(() => world.banishUpgrade(u)),
+            child: Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.55),
+                shape: BoxShape.circle,
+                border: Border.all(color: P.red.withOpacity(0.7)),
+              ),
+              child: const Text('🚫', style: TextStyle(fontSize: 13)),
+            ),
+          ),
+        ),
+    ]);
   }
 
   // ── 사망 ──
