@@ -681,6 +681,51 @@ class World {
     opts[rng.nextInt(opts.length)]();
   }
 
+  // 높은 스테이지로 시작할 때 — '그 스테이지까지 플레이한 만큼'의 시작 빌드를 자동 지급.
+  //  (레벨1 맨몸으로 강한 적과 만나 못 이기던 문제 해결. 편의 우선 → 클릭 강요 없이 즉시 강하게.)
+  void _grantStartBuild(int st) {
+    if (st <= 1) return;
+    int picks = ((st - 1) * 1.7).round(); // 스테이지당 약 1.7 강화
+    // 생존 보장: 가죽(체력) 먼저 일부 확보
+    final hidePre = (picks * 0.2).round();
+    hideLv += hidePre;
+    picks -= hidePre;
+    for (int i = 0; i < picks; i++) {
+      final opts = <void Function()>[];
+      if (clawLv < 8) {
+        opts.add(() => clawLv++);
+        opts.add(() => clawLv++); // 시작 무기 가중
+      }
+      if (fangLv < 6) opts.add(() => fangLv++);
+      if (roarLv < 7) opts.add(() => roarLv++);
+      if (boltLv < 7) opts.add(() => boltLv++);
+      if (spikeLv < 7) opts.add(() => spikeLv++);
+      opts.add(() => wildLv++);
+      opts.add(() => wildLv++); // 공격력 가중
+      opts.add(() => hideLv++);
+      opts.add(() => windLv++);
+      opts.add(() => hungerLv++);
+      opts.add(() => rageLv++);
+      opts[rng.nextInt(opts.length)]();
+    }
+    // 레벨·다음 경험치 재계산 (해당 빌드에 맞는 레벨로)
+    level = 1 + ((st - 1) * 1.7).round();
+    xpNext = 4;
+    for (int l = 1; l < level; l++) {
+      xpNext = (xpNext * 1.22 + 2).roundToDouble();
+    }
+    // 특별스킬: 10레벨마다 1개 자동 부여(중복 없이)
+    final sc = level ~/ 10;
+    final av = kSpecials.toList()..shuffle(rng);
+    for (int i = 0; i < sc && i < av.length; i++) {
+      specials.add(av[i].id);
+    }
+    // 변신 마일스톤 대사 재생 방지(이미 호랑이로 깨어남)
+    _tigerMile = level >= 13 ? 2 : (level >= 5 ? 1 : 0);
+    rage = rageMax * 0.5; // 어흥! 절반 충전 상태로 시작
+    hp = maxHp;
+  }
+
   // 조이스틱
   bool jActive = false;
   double jbx = 0, jby = 0, jkx = 0, jky = 0, dirx = 0, diry = 0;
@@ -835,9 +880,14 @@ class World {
     _headStart = _stageHeadStart(stage); // 높은 스테이지 시작 = 그만큼 적 스케일 당겨오기
     _stageT = _stageDuration(stage);
     _applyStageDiff();
+    _grantStartBuild(stage); // 높은 스테이지면 그만큼의 시작 빌드(무기/패시브/레벨/특별스킬) 자동 지급
     jActive = false;
     dirx = diry = 0;
-    _say(_pick(Tiny.greet), force: true, face: '🐯');
+    if (stage > 1) {
+      _say('STAGE $stage의 맹수로 깨어나셨습니다, 대장님 — 이미 강대하십니다!', force: true, face: '😼');
+    } else {
+      _say(_pick(Tiny.greet), force: true, face: '🐯');
+    }
   }
 
   // 광기 해방 — 어흥! 화면 전체 대포효 + 광폭화
@@ -3043,7 +3093,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           }),
         ),
         const SizedBox(height: 4),
-        Text('STAGE↑ = 적 강함 · XP·전리품 ↑(빠른 성장)',
+        Text('STAGE↑ = 적 강함 · XP·전리품 ↑ · 그만큼 강한 시작 빌드(무기·레벨)로 출발',
             style: const TextStyle(color: P.muted, fontSize: 10)),
       ]),
     );
