@@ -372,7 +372,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status }
+enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, travel, options }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -450,6 +450,13 @@ class World {
   double _hsCd = 0; // 히트스톱 쿨다운(잦은 크리로 슬로모 누적 방지)
   double flashT = 0; // 스크린 플래시 잔여
   Color flashCol = P.gold; // 스크린 플래시 색
+  // ── 옵션(설정) — 전역 저장(슬롯 무관). 검증된 표준 옵션 세트 ──
+  bool optShake = true; // 화면 흔들림
+  bool optFlash = true; // 화면 번쩍임(광과민 접근성)
+  bool optDmgNum = true; // 데미지 숫자 표시
+  bool optHaptic = true; // 진동(햅틱)
+  int joyPos = 1; // 조이스틱 위치 0=좌 1=중앙 2=우
+
   double get critChance => 0.12; // 크리 확률(추후 장비/메타 확장 여지)
   double get comboDmg => 1.0 + (combo > 60 ? 60 : combo) * 0.004; // 콤보 공격 보너스(최대 +24%)
   // 히트스톱 발동 — 작은(크리)건 쿨다운 제한, 큰 이벤트(force)는 항상.
@@ -647,13 +654,17 @@ class World {
 
   String _pick(List<String> p) => p[rng.nextInt(p.length)];
 
-  // 충신 대사 출력 (force=false면 잡담 도배 방지 쿨다운). face=표정으로 톤 전달.
+  // 충신 대사 출력 — 펫 타이니가 직접 말한다(상단 띄우기 X). 레벨업 화면용으로 heraldLine도 보관.
   void _say(String line, {double dur = 3.2, bool force = false, String face = '🐯'}) {
     if (!force && _heraldCd > 0) return;
     heraldLine = line;
     heraldFace = face;
     heraldT = dur;
     _heraldCd = 0.8;
+    // 펫 말풍선으로 출력(상단 텍스트 대신). 충신 대사는 잡담 쿨다운 무시하고 표시.
+    petLine = line;
+    petLineT = dur;
+    petHappyT = max(petHappyT, 0.6);
   }
 
 
@@ -808,9 +819,38 @@ class World {
     try {
       slot = (int.tryParse(html.window.localStorage['surv_slot'] ?? '1') ?? 1).clamp(1, 3);
     } catch (_) {}
+    _loadOpts();
     _loadRecords();
     _loadMeta();
     _checkDaily();
+  }
+
+  // ── 옵션 저장/로드 (전역) ──
+  void _loadOpts() {
+    try {
+      final raw = html.window.localStorage['surv_opts'];
+      if (raw == null) return;
+      final j = (jsonDecode(raw) as Map).cast<String, dynamic>();
+      optShake = j['shake'] as bool? ?? true;
+      optFlash = j['flash'] as bool? ?? true;
+      optDmgNum = j['dmgnum'] as bool? ?? true;
+      optHaptic = j['haptic'] as bool? ?? true;
+      sfx.muted = j['mute'] as bool? ?? false;
+      joyPos = (j['joy'] as int?) ?? 1;
+    } catch (_) {}
+  }
+
+  void saveOpts() {
+    try {
+      html.window.localStorage['surv_opts'] = jsonEncode({
+        'shake': optShake,
+        'flash': optFlash,
+        'dmgnum': optDmgNum,
+        'haptic': optHaptic,
+        'mute': sfx.muted,
+        'joy': joyPos,
+      });
+    } catch (_) {}
   }
 
   // ── 파생 스탯 (캐릭터 배수 + 광폭화 + 영구 강화(meta) 반영) ──
@@ -1833,6 +1873,7 @@ class World {
   void _onDeath() {
     phase = GPhase.dead;
     _hapticBig = true;
+    startStage = stage; // 사용자 선택: 죽은 스테이지에서 바로 재시작(사망 화면서 변경 가능)
     sfx.play('death');
     if (time > bestTime) bestTime = time;
     if (kills > bestKills) bestKills = kills;
@@ -1986,9 +2027,9 @@ class World {
   // ── 햅틱 큐 소비 ──
   void consumeHaptics() {
     try {
-      if (_hapticBig) {
+      if (optHaptic && _hapticBig) {
         HapticFeedback.heavyImpact();
-      } else if (_hapticHit) {
+      } else if (optHaptic && _hapticHit) {
         HapticFeedback.selectionClick();
       }
     } catch (_) {}
@@ -2082,12 +2123,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.playing) _rageButton(),
             if (world.phase == GPhase.playing) _tinyCallButton(),
             if (world.phase == GPhase.playing && world.combo >= 5) _comboDisplay(),
-            if (world.phase == GPhase.playing && world.heraldT > 0) _heraldBubble(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.shop) _shopOverlay(),
             if (world.phase == GPhase.achieve) _achieveOverlay(),
             if (world.phase == GPhase.skins) _skinsOverlay(),
             if (world.phase == GPhase.status) _statusOverlay(),
+            if (world.phase == GPhase.inventory) _inventoryOverlay(),
+            if (world.phase == GPhase.travel) _travelOverlay(),
+            if (world.phase == GPhase.options) _optionsOverlay(),
             if (world.phase == GPhase.menu) _menuOverlay(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.dead) _death(),
@@ -2167,75 +2210,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ── 충신 '타이니' 말풍선 (상단, 무음 텍스트) ──
-  Widget _heraldBubble() {
-    final ht = world.heraldT;
-    final appear = ((3.2 - ht) / 0.22).clamp(0.0, 1.0); // 등장 진행 0→1
-    final fade = ht > 0.5 ? 1.0 : (ht / 0.5).clamp(0.0, 1.0);
-    final pop = 0.82 + 0.18 * appear + sin(appear * 3.1416) * 0.07; // 살짝 오버슈트 팝
-    final bounce = sin(world.time * 6) * 2.2; // 타이니 얼굴 통통
-    return Positioned(
-      top: 80,
-      left: 12,
-      right: 12,
-      child: IgnorePointer(
-        child: Center(
-          child: Opacity(
-            opacity: fade,
-            child: Transform.scale(
-              scale: pop,
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 440),
-                padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xA6140E09), // 반투명 — 뒤 적이 보이게
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: P.gold.withOpacity(0.9), width: 1.6),
-                  boxShadow: [BoxShadow(color: P.gold.withOpacity(0.35), blurRadius: 10)],
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  // 통통 튀는 타이니 얼굴 (표정으로 톤 전달 — 안 읽어도 인식)
-                  Transform.translate(
-                    offset: Offset(0, bounce),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: P.gold.withOpacity(0.22),
-                        border: Border.all(color: P.gold.withOpacity(0.85)),
-                      ),
-                      child: Text(world.heraldFace, style: const TextStyle(fontSize: 18)),
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                  Flexible(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('타이니',
-                            style: TextStyle(
-                                color: P.gold, fontSize: 9.5, fontWeight: FontWeight.bold)),
-                        Text(world.heraldLine,
-                            style: const TextStyle(
-                                color: P.goldSoft,
-                                fontSize: 12.5,
-                                height: 1.25,
-                                fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
-                ]),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   // ── 타이니 호출 버튼 (시리/빅스비식) — 어흥 버튼 위(좌하단). 불투명 ──
   Widget _tinyCallButton() {
     return Positioned(
@@ -2287,63 +2261,38 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             _miniStat('처치', '${world.kills}', P.red),
           ]),
         ),
-        const SizedBox(height: 14),
-        // 사냥터 이동 — 버튼(STAGE 칩)을 눌러서만 선택·이동
-        Container(
-          width: 300,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: P.panel,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: P.line),
-          ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('🗺  사냥터 이동  (탭하면 이동)',
-                style: TextStyle(color: P.goldSoft, fontSize: 12.5, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 7,
-              runSpacing: 7,
-              children: List.generate(world.maxStage, (i) {
-                final n = i + 1;
-                final cur = n == world.stage;
-                return GestureDetector(
-                  onTap: () => setState(() => world.travelToStage(n)),
-                  child: Container(
-                    width: 40,
-                    height: 34,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: cur ? P.gold : Colors.black.withOpacity(0.35),
-                      borderRadius: BorderRadius.circular(9),
-                      border: Border.all(color: cur ? P.gold : P.line),
-                    ),
-                    child: Text('$n',
-                        style: TextStyle(
-                            color: cur ? Colors.black : P.parch,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold)),
-                  ),
-                );
-              }),
-            ),
-            const SizedBox(height: 4),
-            Text(world.maxStage <= 1 ? '더 오래 버티면 새 사냥터가 열립니다' : '낮추면 수월 · 올리면 보상(XP·전리품)↑',
-                style: const TextStyle(color: P.muted, fontSize: 10)),
-          ]),
-        ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         _bigBtn('▶  이어하기', P.gold, () => setState(() => world.resume())),
         const SizedBox(height: 10),
-        _bigBtn('📊  상태 · 장비', P.panel, () => setState(() {
-              world.statusReturn = GPhase.menu;
-              world.phase = GPhase.status;
-            }), dark: false),
+        _bigBtn('🗺  사냥터 이동', P.cyan, () => setState(() => world.phase = GPhase.travel)),
         const SizedBox(height: 10),
-        _bigBtn('🦷  전리품 상점', P.panel, () => setState(() {
-              world.shopReturn = GPhase.menu;
-              world.phase = GPhase.shop;
-            }), dark: false),
+        // 장비 / 인벤토리 (분리)
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          _halfBtn('🛡  장비', () => setState(() {
+                world.statusReturn = GPhase.menu;
+                world.phase = GPhase.status;
+              })),
+          const SizedBox(width: 10),
+          _halfBtn('🎒  인벤토리', () => setState(() {
+                world.statusReturn = GPhase.menu;
+                world.phase = GPhase.inventory;
+              })),
+        ]),
+        const SizedBox(height: 10),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          _halfBtn('🦷  상점', () => setState(() {
+                world.shopReturn = GPhase.menu;
+                world.phase = GPhase.shop;
+              })),
+          const SizedBox(width: 10),
+          _halfBtn('⚙  옵션', () => setState(() {
+                world.statusReturn = GPhase.menu;
+                world.phase = GPhase.options;
+              })),
+        ]),
+        const SizedBox(height: 10),
+        _bigBtn('🏠  세이브 선택(타이틀)', P.panel, () => setState(() => world.phase = GPhase.title),
+            dark: false),
         const SizedBox(height: 10),
         // [내부 테스트 치트] 타이니 +10 레벨
         _bigBtn('🐞  치트: +10 레벨', const Color(0xFF2A3A2A),
@@ -2352,6 +2301,26 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       ),
     );
   }
+
+  // 절반 너비 버튼 (2열 배치용)
+  Widget _halfBtn(String t, VoidCallback onTap) => Material(
+        color: P.panel,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Container(
+            width: 145,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12), border: Border.all(color: P.line)),
+            child: Text(t,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+          ),
+        ),
+      );
 
   Widget _miniStat(String label, String val, Color c) => Column(
         mainAxisSize: MainAxisSize.min,
@@ -2620,6 +2589,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           _bigBtn('🎀  스킨  (${world.ownedSkins.length}/${kSkins.length})', P.panel,
               () => setState(() => world.phase = GPhase.skins),
               dark: false),
+          const SizedBox(height: 10),
+          _bigBtn('⚙  옵션', P.panel, () => setState(() {
+                world.statusReturn = GPhase.title;
+                world.phase = GPhase.options;
+              }), dark: false),
           if (world.dailyJustClaimed) ...[
             const SizedBox(height: 12),
             Container(
@@ -2840,7 +2814,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
             child: Row(children: [
-              const Text('📊 상태 · 장비',
+              const Text('🛡 장비 · 능력치',
                   style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
               const Spacer(),
               Text('보유 🦷 ${world.fangs}',
@@ -2885,10 +2859,15 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   ]),
                 ),
                 const SizedBox(height: 16),
-                const Text('🛠 장비 — 장착 시 영구 적용 (보스 전리품·대장간 구매)',
+                const Text('장착 중인 장비',
                     style: TextStyle(color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                ...kGear.map((g) => _gearRow(g)),
+                _equipSlotRow(GearSlot.weapon, '무기'),
+                _equipSlotRow(GearSlot.armor, '방어구'),
+                _equipSlotRow(GearSlot.trinket, '장신구'),
+                const SizedBox(height: 10),
+                _bigBtn('🎒  인벤토리에서 장착 · 구매', P.cyan,
+                    () => setState(() => world.phase = GPhase.inventory)),
                 if (inRun) ...[
                   const SizedBox(height: 16),
                   const Text('이번 런 빌드',
@@ -2905,6 +2884,264 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 dark: false),
           ),
         ]),
+      ),
+    );
+  }
+
+  // 장착 슬롯 한 줄 (비어있으면 안내) — 탭하면 인벤토리로
+  Widget _equipSlotRow(GearSlot s, String label) {
+    final id = world.equipped[s];
+    final g = id == null ? null : world.gearById(id);
+    final rc = g == null ? P.muted : kRarityCol[g.rarity];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: GestureDetector(
+        onTap: () => setState(() => world.phase = GPhase.inventory),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: P.panel,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: g == null ? P.line : rc.withOpacity(0.7)),
+          ),
+          child: Row(children: [
+            SizedBox(
+                width: 46,
+                child: Text(label, style: const TextStyle(color: P.muted, fontSize: 11))),
+            Text(g == null ? '· ' : '${g.icon} ', style: const TextStyle(fontSize: 18)),
+            Expanded(
+              child: Text(g == null ? '비어 있음' : g.name,
+                  style: TextStyle(
+                      color: g == null ? P.muted : rc,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.bold)),
+            ),
+            Text(g == null ? '' : g.desc,
+                style: const TextStyle(color: P.muted, fontSize: 9.5)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  // ── 인벤토리 / 대장간 — 보유·구매 장비 목록(장착/구매) ──
+  Widget _inventoryOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.86),
+      child: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
+            child: Row(children: [
+              const Text('🎒 인벤토리 · 대장간',
+                  style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              Text('보유 🦷 ${world.fangs}',
+                  style: const TextStyle(color: P.goldSoft, fontSize: 15, fontWeight: FontWeight.bold)),
+            ]),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(18, 0, 18, 4),
+            child: Text('보유 장비는 [장착], 미보유는 🦷로 대장간 구매. 슬롯당 1개 장착.',
+                style: TextStyle(color: P.muted, fontSize: 11)),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+              children: kGear.map((g) => _gearRow(g)).toList(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+            child: _bigBtn('← 장비 화면으로', P.panel, () => setState(() => world.phase = GPhase.status),
+                dark: false),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // ── 사냥터 이동 (전용 화면) — STAGE 버튼으로 선택·이동 ──
+  Widget _travelOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.85),
+      alignment: Alignment.center,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(22),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('🗺 사냥터 이동',
+              style: TextStyle(color: P.gold, fontSize: 22, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text('현재 STAGE ${world.stage} · 최고 ${world.maxStage}',
+              style: const TextStyle(color: P.muted, fontSize: 12)),
+          const SizedBox(height: 16),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: List.generate(world.maxStage, (i) {
+                final n = i + 1;
+                final cur = n == world.stage;
+                final dc = world.diffForStage(n);
+                final col = dc < 1.0 ? P.green : (dc < 1.6 ? P.gold : P.red);
+                return GestureDetector(
+                  onTap: () => setState(() => world.travelToStage(n)),
+                  child: Container(
+                    width: 54,
+                    height: 50,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: cur ? P.gold : Colors.black.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: cur ? P.gold : col.withOpacity(0.7), width: cur ? 2 : 1),
+                    ),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Text('$n',
+                          style: TextStyle(
+                              color: cur ? Colors.black : P.parch,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold)),
+                      Text('×${dc.toStringAsFixed(1)}',
+                          style: TextStyle(
+                              color: cur ? Colors.black : col, fontSize: 9, fontWeight: FontWeight.bold)),
+                    ]),
+                  ),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text('낮추면 수월 · 올리면 적 강함 + XP·전리품↑ (탭하면 즉시 이동)',
+              textAlign: TextAlign.center, style: TextStyle(color: P.muted, fontSize: 10.5)),
+          const SizedBox(height: 18),
+          _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = GPhase.menu), dark: false),
+        ]),
+      ),
+    );
+  }
+
+  // ── 옵션 (설정) — 검증된 핵심 옵션. 전역 저장 ──
+  Widget _optionsOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.88),
+      alignment: Alignment.center,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(22),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('⚙ 옵션',
+              style: TextStyle(color: P.gold, fontSize: 22, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          _toggleRow('🔊 소리', !world.sfx.muted, () => setState(() {
+                world.toggleMute();
+                world.saveOpts();
+              })),
+          _toggleRow('📳 진동(햅틱)', world.optHaptic, () => setState(() {
+                world.optHaptic = !world.optHaptic;
+                world.saveOpts();
+              })),
+          _toggleRow('🫨 화면 흔들림', world.optShake, () => setState(() {
+                world.optShake = !world.optShake;
+                world.saveOpts();
+              })),
+          _toggleRow('⚡ 화면 번쩍임 (광과민 주의)', world.optFlash, () => setState(() {
+                world.optFlash = !world.optFlash;
+                world.saveOpts();
+              })),
+          _toggleRow('🔢 데미지 숫자', world.optDmgNum, () => setState(() {
+                world.optDmgNum = !world.optDmgNum;
+                world.saveOpts();
+              })),
+          const SizedBox(height: 8),
+          // 조이스틱 위치
+          Container(
+            width: 300,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: P.panel,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: P.line),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('🕹 조이스틱 위치',
+                  style: TextStyle(color: P.parch, fontSize: 13, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Row(children: [
+                _joyPosBtn('왼쪽', 0),
+                const SizedBox(width: 8),
+                _joyPosBtn('가운데', 1),
+                const SizedBox(width: 8),
+                _joyPosBtn('오른쪽', 2),
+              ]),
+            ]),
+          ),
+          const SizedBox(height: 18),
+          _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = world.statusReturn),
+              dark: false),
+        ]),
+      ),
+    );
+  }
+
+  Widget _toggleRow(String label, bool on, VoidCallback onTap) => Padding(
+        padding: const EdgeInsets.only(bottom: 9),
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 300,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              color: P.panel,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: P.line),
+            ),
+            child: Row(children: [
+              Expanded(
+                  child: Text(label,
+                      style: const TextStyle(
+                          color: P.parch, fontSize: 14, fontWeight: FontWeight.bold))),
+              Container(
+                width: 50,
+                height: 26,
+                alignment: on ? Alignment.centerRight : Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  color: on ? P.gold.withOpacity(0.85) : Colors.black.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: on ? P.gold : P.line),
+                ),
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      );
+
+  Widget _joyPosBtn(String label, int v) {
+    final on = world.joyPos == v;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() {
+          world.joyPos = v;
+          world.saveOpts();
+        }),
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: on ? P.gold : Colors.black.withOpacity(0.35),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: on ? P.gold : P.line),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  color: on ? Colors.black : P.parch, fontSize: 12.5, fontWeight: FontWeight.bold)),
+        ),
       ),
     );
   }
@@ -3379,9 +3616,9 @@ class WorldPainter extends CustomPainter {
 
     if (w.phase == GPhase.title) return;
 
-    // 화면 흔들림 — 내용물만
+    // 화면 흔들림 — 내용물만 (옵션 OFF면 생략)
     canvas.save();
-    if (w.shake > 0.2) {
+    if (w.optShake && w.shake > 0.2) {
       final dx = sin(w.time * 91.0) * w.shake;
       final dy = cos(w.time * 73.0) * w.shake;
       canvas.translate(dx, dy);
@@ -3500,34 +3737,37 @@ class WorldPainter extends CustomPainter {
     // 펫 타이니 (졸졸 따라다니며 표정 반응)
     _pet(canvas);
 
-    // 데미지 숫자
-    final tp = TextPainter(textDirection: TextDirection.ltr);
-    for (final f in w.floats) {
-      final a = (f.life / f.maxLife).clamp(0.0, 1.0);
-      tp.text = TextSpan(
-        text: f.text,
-        style: TextStyle(
-          color: f.color.withOpacity(a),
-          fontSize: f.size,
-          fontWeight: FontWeight.bold,
-          shadows: const [Shadow(color: Colors.black, blurRadius: 2)],
-        ),
-      );
-      tp.layout();
-      tp.paint(canvas, Offset(f.x - tp.width / 2, f.y - tp.height / 2));
+    // 데미지 숫자 (옵션으로 끌 수 있음)
+    if (w.optDmgNum) {
+      final tp = TextPainter(textDirection: TextDirection.ltr);
+      for (final f in w.floats) {
+        final a = (f.life / f.maxLife).clamp(0.0, 1.0);
+        tp.text = TextSpan(
+          text: f.text,
+          style: TextStyle(
+            color: f.color.withOpacity(a),
+            fontSize: f.size,
+            fontWeight: FontWeight.bold,
+            shadows: const [Shadow(color: Colors.black, blurRadius: 2)],
+          ),
+        );
+        tp.layout();
+        tp.paint(canvas, Offset(f.x - tp.width / 2, f.y - tp.height / 2));
+      }
     }
 
     canvas.restore();
 
-    // 스크린 플래시 — 큰 이벤트(레벨업·어흥·보스·엘리트) 순간 화면 전체 발광(절제된 세기)
-    if (w.flashT > 0) {
+    // 스크린 플래시 — 옵션 ON일 때만(광과민 접근성). 절제된 세기.
+    if (w.optFlash && w.flashT > 0) {
       canvas.drawRect(Offset.zero & size,
           Paint()..color = w.flashCol.withOpacity((w.flashT * 0.4).clamp(0.0, 0.32)));
     }
 
-    // 방향키 — 하단 우측 고정(오른손잡이), 반투명. 노브는 진행 방향 반영. (플레이 중에만)
+    // 방향키 — 옵션 위치(좌/중/우). 노브는 진행 방향 반영. (플레이 중에만)
     if (w.phase != GPhase.playing) return;
-    final jx = size.width - 74.0, jy = size.height - 78.0, baseR = 46.0;
+    final jcx = w.joyPos == 0 ? 74.0 : (w.joyPos == 2 ? size.width - 74.0 : size.width / 2);
+    final jx = jcx, jy = size.height - 78.0, baseR = 46.0;
     canvas.drawCircle(Offset(jx, jy), baseR,
         Paint()..color = Colors.white.withOpacity(w.jActive ? 0.10 : 0.05));
     canvas.drawCircle(
@@ -3658,27 +3898,39 @@ class WorldPainter extends CustomPainter {
     )..layout();
     tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
 
-    // 펫 말풍선 (반투명, 짧게)
+    // 펫 말풍선 — 타이니가 직접 말함(상단 띄우기 대체). 긴 충신 대사도 줄바꿈 수용.
     if (w.petLineT > 0 && w.petLine.isNotEmpty) {
-      final fa = (w.petLineT < 0.4 ? w.petLineT / 0.4 : 1.0).clamp(0.0, 1.0) * 0.82;
+      final fa = (w.petLineT < 0.4 ? w.petLineT / 0.4 : 1.0).clamp(0.0, 1.0);
+      const maxW = 168.0;
       final bt = TextPainter(
         text: TextSpan(
             text: w.petLine,
             style: TextStyle(
-                fontSize: 10.5, fontWeight: FontWeight.w600, color: P.goldSoft.withOpacity(fa))),
+                fontSize: 11.5,
+                height: 1.2,
+                fontWeight: FontWeight.w600,
+                color: P.goldSoft.withOpacity(fa))),
         textDirection: TextDirection.ltr,
-      )..layout();
-      final bx = x + 13, by = y - bt.height / 2 - 8;
-      final rect = RRect.fromRectAndRadius(
-          Rect.fromLTWH(bx - 5, by - 3, bt.width + 10, bt.height + 6), const Radius.circular(7));
-      canvas.drawRRect(rect, Paint()..color = Colors.black.withOpacity(0.5 * fa));
+        maxLines: 4,
+      )..layout(maxWidth: maxW);
+      const pad = 7.0;
+      final bw = bt.width + pad * 2;
+      final bh = bt.height + pad * 2;
+      double bx = x - bw / 2;
+      double by = y - 18 - bh;
+      final maxX = (w.w - bw - 4).clamp(4.0, 100000.0);
+      bx = bx.clamp(4.0, maxX);
+      if (by < 4) by = y + 18; // 위가 좁으면 아래로
+      final rect =
+          RRect.fromRectAndRadius(Rect.fromLTWH(bx, by, bw, bh), const Radius.circular(9));
+      canvas.drawRRect(rect, Paint()..color = const Color(0xFF140E09).withOpacity(0.82 * fa));
       canvas.drawRRect(
           rect,
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1
-            ..color = P.gold.withOpacity(0.5 * fa));
-      bt.paint(canvas, Offset(bx, by));
+            ..strokeWidth = 1.4
+            ..color = P.gold.withOpacity(0.85 * fa));
+      bt.paint(canvas, Offset(bx + pad, by + pad));
     }
   }
 
