@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-10';
+const String kSaveVer = 'v2026.06.13-11';
 
 void main() => runApp(const SurvivorApp());
 
@@ -546,9 +546,27 @@ class World {
   int cheatPending = 0; // [치트] 대기 중인 강제 레벨업(스킬 선택) 횟수
   // 양→호랑이 외형 — 현재 초상화 단계의 prog(이산). 초상화 진급 때 '짜잔' 바뀜.
   double get tigerProg => kPortraits[portraitTier.clamp(0, kPortraits.length - 1)].prog;
-  int portraitTier = 0; // 현재 초상화 단계
+  int portraitTier = 0; // 현재 초상화 단계(런 중)
+  int maxPortrait = 0; // 도달한 최고 초상화(영구 — 메인화면 내 캐릭터 표시)
   double portraitBonus(String k) =>
       kPortraits[portraitTier.clamp(0, kPortraits.length - 1)].bonus[k] ?? 0;
+  double portraitBonusAt(int tier, String k) =>
+      kPortraits[tier.clamp(0, kPortraits.length - 1)].bonus[k] ?? 0;
+  // 전투력(Power) — 영구 강화(메타·장비·환생·최고 초상화) 종합 지표(메인화면 표시).
+  int get powerScore {
+    final mp = maxPortrait;
+    final dmgF = 1 +
+        0.05 * metaLv('atk') +
+        0.01 * gearStat('dmg') +
+        0.01 * portraitBonusAt(mp, 'dmg') +
+        0.12 * prestige;
+    final hpF = (baseMaxHp + 15 * metaLv('hp') + gearStat('hp') + portraitBonusAt(mp, 'hp')) /
+        baseMaxHp *
+        (1 + 0.12 * prestige);
+    final asF = 1 + 0.01 * gearStat('as') + 0.01 * portraitBonusAt(mp, 'as');
+    final spdF = 1 + 0.04 * metaLv('spd') + 0.01 * gearStat('spd') + 0.01 * portraitBonusAt(mp, 'spd');
+    return (dmgF * hpF * asF * spdF * 100).round();
+  }
   // 크기는 거의 고정 — 무한정 커지지 않게(성장은 '모핑'으로 표현). 호랑이로 갈수록 아주 약간만 커짐.
   double get growScale => 1.0 + tigerProg * 0.08;
   // 초상화 진급 '짜잔' 컷신 (탭해야 닫힘)
@@ -820,6 +838,7 @@ class World {
     for (int i = 0; i < kPortraits.length; i++) {
       if (level >= kPortraits[i].reqLevel) portraitTier = i;
     }
+    if (portraitTier > maxPortrait) maxPortrait = portraitTier;
     rage = rageMax * 0.5; // 어흥! 절반 충전 상태로 시작
     hp = maxHp;
   }
@@ -1261,6 +1280,7 @@ class World {
       if (portraitTier + 1 < kPortraits.length && level >= kPortraits[portraitTier + 1].reqLevel) {
         final from = portraitTier;
         portraitTier += 1;
+        if (portraitTier > maxPortrait) maxPortrait = portraitTier; // 영구 최고 갱신
         _morphPendingSpecial = wantSpecial;
         _triggerMorph(from);
         return;
@@ -2092,6 +2112,7 @@ class World {
     equipped.clear();
     startStage = 1;
     prestige = 0;
+    maxPortrait = 0;
     _loadRecords();
     _loadMeta();
     _checkDaily();
@@ -2158,6 +2179,7 @@ class World {
       lastDaily = j['daily'] as String? ?? '';
       maxStage = (j['maxst'] as int?) ?? 1;
       prestige = (j['prestige'] as int?) ?? 0;
+      maxPortrait = (j['maxpt'] as int?) ?? 0;
       ownedGear.addAll(((j['gear'] as List?) ?? []).map((e) => e as String));
       final eq = (j['equip'] as Map?) ?? {};
       eq.forEach((k, v) {
@@ -2182,6 +2204,7 @@ class World {
         'daily': lastDaily,
         'maxst': maxStage,
         'prestige': prestige,
+        'maxpt': maxPortrait,
         'gear': ownedGear.toList(),
         'equip': eq,
       });
@@ -2766,7 +2789,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   // ── 메인화면(소굴) — 트렌디 레이아웃: 상단 상태 / 좌·우 메뉴 레일 / 중앙 캐릭터 / 맨 아래 생존시작 ──
   Widget _title() {
-    final sel = kChars[world.charIndex.clamp(0, kChars.length - 1)];
     return Container(
       width: double.infinity,
       height: double.infinity,
@@ -2784,7 +2806,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 SizedBox(
                   width: 150,
                   height: 150,
-                  child: CustomPaint(painter: HeroPainter(world.titleClock)),
+                  child: CustomPaint(
+                      painter: HeroPainter(world.titleClock,
+                          kPortraits[world.maxPortrait.clamp(0, kPortraits.length - 1)].prog)),
                 ),
                 const SizedBox(height: 4),
                 ShaderMask(
@@ -2806,9 +2830,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                           ])),
                 ),
                 const SizedBox(height: 4),
-                Text('— ${sel.name} —',
+                Text('— ${kPortraits[world.maxPortrait.clamp(0, kPortraits.length - 1)].name} —',
                     style: const TextStyle(
-                        color: P.goldSoft, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                        color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1)),
                 if (world.dailyJustClaimed) ...[
                   const SizedBox(height: 8),
                   Container(
@@ -2939,17 +2963,40 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ),
           child: Text(t, style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.bold)),
         );
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: 7,
-      runSpacing: 6,
-      children: [
-        chip('🦷 ${world.fangs}', P.goldSoft),
-        if (world.prestige > 0) chip('🌀 ×${world.prestige}', P.purple),
-        chip('🏆 ${world.bestTime > 0 ? World.mmss(world.bestTime) : "–"}', P.gold),
-        chip('🌊 STAGE ${world.maxStage}', P.cyan),
-      ],
-    );
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      // 전투력 — 누적 능력치 종합 지표
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+              colors: [P.gold.withOpacity(0.22), Colors.black.withOpacity(0.4)]),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: P.gold.withOpacity(0.7), width: 1.4),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Text('⚔ 전투력 ',
+              style: TextStyle(color: P.goldSoft, fontSize: 12, fontWeight: FontWeight.bold)),
+          Text('${world.powerScore}',
+              style: const TextStyle(
+                  color: P.gold,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                  shadows: [Shadow(color: Color(0xCCB7402E), blurRadius: 8)])),
+        ]),
+      ),
+      const SizedBox(height: 7),
+      Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 7,
+        runSpacing: 6,
+        children: [
+          chip('🦷 ${world.fangs}', P.goldSoft),
+          if (world.prestige > 0) chip('🌀 ×${world.prestige}', P.purple),
+          chip('🏆 ${world.bestTime > 0 ? World.mmss(world.bestTime) : "–"}', P.gold),
+          chip('🌊 ${world.maxStage}', P.cyan),
+        ],
+      ),
+    ]);
   }
 
   // 콤팩트 사냥터 스테퍼 (시작 STAGE ± 선택)
@@ -5183,14 +5230,17 @@ class MorphPainter extends CustomPainter {
 // =============================================================================
 class HeroPainter extends CustomPainter {
   final double t;
-  HeroPainter(this.t);
+  final double prog; // 0=순한 양 ~ 1=완전한 호랑이 (내 최고 초상화)
+  HeroPainter(this.t, [this.prog = 1.0]);
 
   @override
   void paint(Canvas canvas, Size size) {
     final cx = size.width / 2, cy = size.height / 2;
     final breathe = 1 + sin(t * 2) * 0.025;
     final r = size.width * 0.30 * breathe;
-    const col = P.gold;
+    final tg = prog.clamp(0.0, 1.0);
+    const sheepCol = Color(0xFFF3ECDF);
+    final col = Color.lerp(sheepCol, P.gold, tg)!;
     const stripe = Color(0xFF3A2606);
     // 회전 후광 빛줄기
     for (int i = 0; i < 16; i++) {
@@ -5214,17 +5264,33 @@ class HeroPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.5
           ..color = P.gold.withOpacity(0.7));
-    // 귀
-    final ears = Path()
-      ..moveTo(cx - r * 0.85, cy - r * 0.5)
-      ..lineTo(cx - r * 0.45, cy - r * 1.3)
-      ..lineTo(cx - r * 0.05, cy - r * 0.65)
-      ..close()
-      ..moveTo(cx + r * 0.85, cy - r * 0.5)
-      ..lineTo(cx + r * 0.45, cy - r * 1.3)
-      ..lineTo(cx + r * 0.05, cy - r * 0.65)
-      ..close();
-    canvas.drawPath(ears, Paint()..color = col);
+    // 양털(낮은 단계일수록 풍성)
+    if (tg < 0.95) {
+      final wool = Paint()..color = Colors.white.withOpacity((1 - tg) * 0.8);
+      for (int i = 0; i < 11; i++) {
+        final a = i * 6.2831853 / 11 + t * 0.4;
+        canvas.drawCircle(Offset(cx + cos(a) * r * 0.96, cy + sin(a) * r * 0.96),
+            r * 0.4 * (1 - tg * 0.5), wool);
+      }
+    }
+    // 귀 — 양(둥근)↔호랑이(뾰족) 크로스페이드
+    if (tg < 0.95) {
+      final sp = Paint()..color = col.withOpacity(1 - tg);
+      canvas.drawOval(Rect.fromCenter(center: Offset(cx - r * 0.95, cy - r * 0.38), width: r * 0.7, height: r * 0.5), sp);
+      canvas.drawOval(Rect.fromCenter(center: Offset(cx + r * 0.95, cy - r * 0.38), width: r * 0.7, height: r * 0.5), sp);
+    }
+    if (tg > 0.05) {
+      final ears = Path()
+        ..moveTo(cx - r * 0.85, cy - r * 0.5)
+        ..lineTo(cx - r * 0.45, cy - r * 1.3)
+        ..lineTo(cx - r * 0.05, cy - r * 0.65)
+        ..close()
+        ..moveTo(cx + r * 0.85, cy - r * 0.5)
+        ..lineTo(cx + r * 0.45, cy - r * 1.3)
+        ..lineTo(cx + r * 0.05, cy - r * 0.65)
+        ..close();
+      canvas.drawPath(ears, Paint()..color = col.withOpacity(tg));
+    }
     // 얼굴
     canvas.drawCircle(Offset(cx, cy), r, Paint()..color = col);
     canvas.drawCircle(
@@ -5234,18 +5300,18 @@ class HeroPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.5
           ..color = Colors.white.withOpacity(0.85));
-    // 줄무늬
-    final st = Paint()
-      ..color = stripe
-      ..strokeWidth = r * 0.09
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(Offset(cx - r * 0.5, cy - r * 0.55), Offset(cx - r * 0.2, cy - r * 0.2), st);
-    canvas.drawLine(Offset(cx + r * 0.5, cy - r * 0.55), Offset(cx + r * 0.2, cy - r * 0.2), st);
-    canvas.drawLine(Offset(cx, cy - r * 0.72), Offset(cx, cy - r * 0.36), st);
-    canvas.drawLine(Offset(cx - r * 0.72, cy + r * 0.1), Offset(cx - r * 0.42, cy + r * 0.16), st);
-    canvas.drawLine(Offset(cx + r * 0.72, cy + r * 0.1), Offset(cx + r * 0.42, cy + r * 0.16), st);
+    // 줄무늬(단계 높을수록 진함)
+    if (tg > 0.05) {
+      final st = Paint()
+        ..color = stripe.withOpacity(tg * 0.9)
+        ..strokeWidth = r * 0.09
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(Offset(cx - r * 0.5, cy - r * 0.55), Offset(cx - r * 0.2, cy - r * 0.2), st);
+      canvas.drawLine(Offset(cx + r * 0.5, cy - r * 0.55), Offset(cx + r * 0.2, cy - r * 0.2), st);
+      canvas.drawLine(Offset(cx, cy - r * 0.72), Offset(cx, cy - r * 0.36), st);
+    }
     // 볼터치(귀여움)
-    final blush = Paint()..color = const Color(0xFFFF8E8E).withOpacity(0.4);
+    final blush = Paint()..color = const Color(0xFFFF8E8E).withOpacity(0.4 * (1 - tg * 0.4));
     canvas.drawCircle(Offset(cx - r * 0.55, cy + r * 0.28), r * 0.15, blush);
     canvas.drawCircle(Offset(cx + r * 0.55, cy + r * 0.28), r * 0.15, blush);
     // 눈(깜빡)
@@ -5267,31 +5333,35 @@ class HeroPainter extends CustomPainter {
       canvas.drawCircle(Offset(cx - r * 0.44, ey - r * 0.07), r * 0.07, hi);
       canvas.drawCircle(Offset(cx + r * 0.32, ey - r * 0.07), r * 0.07, hi);
     }
-    // 사나운 눈썹
-    final brow = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = r * 0.09
-      ..strokeCap = StrokeCap.round
-      ..color = stripe;
-    canvas.drawLine(Offset(cx - r * 0.56, ey - r * 0.34), Offset(cx - r * 0.22, ey - r * 0.16), brow);
-    canvas.drawLine(Offset(cx + r * 0.56, ey - r * 0.34), Offset(cx + r * 0.22, ey - r * 0.16), brow);
+    // 사나운 눈썹(단계 높을수록)
+    if (tg > 0.2) {
+      final brow = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = r * 0.09
+        ..strokeCap = StrokeCap.round
+        ..color = stripe.withOpacity(tg);
+      canvas.drawLine(Offset(cx - r * 0.56, ey - r * 0.34), Offset(cx - r * 0.22, ey - r * 0.16), brow);
+      canvas.drawLine(Offset(cx + r * 0.56, ey - r * 0.34), Offset(cx + r * 0.22, ey - r * 0.16), brow);
+    }
     // 코
     canvas.drawCircle(Offset(cx, cy + r * 0.32), r * 0.1, dark);
-    // 송곳니
-    final fang = Paint()..color = Colors.white;
-    final ny = cy + r * 0.42;
-    final f1 = Path()
-      ..moveTo(cx - r * 0.18, ny)
-      ..lineTo(cx - r * 0.06, ny)
-      ..lineTo(cx - r * 0.12, ny + r * 0.26)
-      ..close();
-    final f2 = Path()
-      ..moveTo(cx + r * 0.18, ny)
-      ..lineTo(cx + r * 0.06, ny)
-      ..lineTo(cx + r * 0.12, ny + r * 0.26)
-      ..close();
-    canvas.drawPath(f1, fang);
-    canvas.drawPath(f2, fang);
+    // 송곳니(단계 높을수록)
+    if (tg > 0.3) {
+      final fang = Paint()..color = Colors.white.withOpacity(((tg - 0.3) * 1.5).clamp(0.0, 1.0));
+      final ny = cy + r * 0.42;
+      final f1 = Path()
+        ..moveTo(cx - r * 0.18, ny)
+        ..lineTo(cx - r * 0.06, ny)
+        ..lineTo(cx - r * 0.12, ny + r * 0.26)
+        ..close();
+      final f2 = Path()
+        ..moveTo(cx + r * 0.18, ny)
+        ..lineTo(cx + r * 0.06, ny)
+        ..lineTo(cx + r * 0.12, ny + r * 0.26)
+        ..close();
+      canvas.drawPath(f1, fang);
+      canvas.drawPath(f2, fang);
+    }
   }
 
   @override
