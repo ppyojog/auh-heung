@@ -35,14 +35,16 @@ jobs:
       # 두 개를 한 번에 빌드·배포: 현재 게임=루트, Flame 검증 슬라이스=/lab (폰에서 A/B 비교)
       - name: Build web — 현재 게임(루트) + Flame 슬라이스(/lab)
         run: |
-          set -e
           REPO="${{ github.event.repository.name }}"
+          # 루트(현재 게임)는 반드시 성공해야 배포 — 실패 시 잡 중단
           flutter build web --release --web-renderer canvaskit --no-web-resources-cdn --base-href "/$REPO/"
           rm -rf site && mkdir -p site
           cp -r build/web/. site/
-          flutter build web --release --web-renderer canvaskit --no-web-resources-cdn --base-href "/$REPO/lab/" -t lib/lab.dart
-          mkdir -p site/lab
-          cp -r build/web/. site/lab/
+          # Flame lab 빌드 — 에러는 사이트에 로그로 남겨 원격에서 읽음(루트 배포는 막지 않음)
+          rm -rf build/web
+          flutter build web --release --web-renderer canvaskit --no-web-resources-cdn --base-href "/$REPO/lab/" -t lib/lab.dart > lab_build.log 2>&1 || true
+          cp lab_build.log site/lab_build.log
+          if [ -f build/web/main.dart.js ]; then mkdir -p site/lab && cp -r build/web/. site/lab/; echo "lab OK"; else echo "lab build FAILED (see /lab_build.log)"; fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
