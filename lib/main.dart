@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-12';
+const String kSaveVer = 'v2026.06.13-13';
 
 void main() => runApp(const SurvivorApp());
 
@@ -2193,6 +2193,7 @@ class World {
       skin = j['skin'] as String? ?? 'default';
       lastDaily = j['daily'] as String? ?? '';
       maxStage = (j['maxst'] as int?) ?? 1;
+      startStage = maxStage; // 기본 시작 사냥터 = 최고 도달 스테이지
       prestige = (j['prestige'] as int?) ?? 0;
       maxPortrait = (j['maxpt'] as int?) ?? 0;
       ownedGear.addAll(((j['gear'] as List?) ?? []).map((e) => e as String));
@@ -2530,7 +2531,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           SizedBox(
             width: 320,
             child: _actBtn('🏠  소굴로 (세이브 선택)', P.panel, false,
-                () => setState(() => world.phase = GPhase.title)),
+                () => setState(() {
+                      world.startStage = world.maxStage;
+                      world.phase = GPhase.title;
+                    })),
           ),
           const SizedBox(height: 9),
           SizedBox(
@@ -4246,8 +4250,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               world.phase = GPhase.status;
             }), dark: false),
         const SizedBox(height: 10),
-        _bigBtn('🏠  타이틀로', P.panel, () => setState(() => world.phase = GPhase.title),
-            dark: false),
+        _bigBtn('🏠  타이틀로', P.panel, () => setState(() {
+              world.startStage = world.maxStage;
+              world.phase = GPhase.title;
+            }), dark: false),
       ]),
       ),
     );
