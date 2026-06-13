@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flame: ^1.18.0   # 검증된 Flutter 2D 게임엔진(출시 게임 표준). /lab 슬라이스에서 성능 검증용
+  flame: 1.18.0   # 정확히 고정: 1.23은 Flutter 3.27+ Color API(withValues) 필요 → 3.24.5와 비호환. 1.18.0은 withOpacity 사용(호환)
 
 flutter:
   uses-material-design: true
