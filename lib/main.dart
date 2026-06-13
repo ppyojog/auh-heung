@@ -4552,6 +4552,33 @@ class WorldPainter extends CustomPainter {
     return tp;
   }
 
+  // 데미지 숫자 캐시 — 매 프레임 TextPainter.layout()은 iOS WebKit에서 매우 비쌈(렉 주범).
+  // 텍스트+크기+색(알파 10단계 양자화)을 키로 1회 레이아웃 후 재사용. blur 그림자 제거(iOS 비용↓).
+  static final Map<String, TextPainter> _floatCache = {};
+  TextPainter _floatTP(String s, double size, Color base, double a) {
+    final ab = (a * 10).round(); // 알파 10단계 → 캐시 재사용 극대화
+    final col = base.withOpacity((ab / 10).clamp(0.0, 1.0));
+    final key = '$s|${size.round()}|${col.value}';
+    var tp = _floatCache[key];
+    if (tp == null) {
+      if (_floatCache.length > 800) _floatCache.clear(); // 폭증 방지(스테이지 전환 등)
+      tp = TextPainter(
+        text: TextSpan(
+          text: s,
+          style: TextStyle(
+            color: col,
+            fontSize: size,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(color: Colors.black.withOpacity((ab / 10).clamp(0.0, 1.0)), offset: const Offset(1, 1))],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      _floatCache[key] = tp;
+    }
+    return tp;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final _sw = Stopwatch()..start();
@@ -4755,19 +4782,9 @@ class WorldPainter extends CustomPainter {
 
     // 데미지 숫자 (옵션으로 끌 수 있음)
     if (w.optDmgNum) {
-      final tp = TextPainter(textDirection: TextDirection.ltr);
       for (final f in w.floats) {
         final a = (f.life / f.maxLife).clamp(0.0, 1.0);
-        tp.text = TextSpan(
-          text: f.text,
-          style: TextStyle(
-            color: f.color.withOpacity(a),
-            fontSize: f.size,
-            fontWeight: FontWeight.bold,
-            shadows: const [Shadow(color: Colors.black, blurRadius: 2)],
-          ),
-        );
-        tp.layout();
+        final tp = _floatTP(f.text, f.size, f.color, a);
         tp.paint(canvas, Offset(f.x - tp.width / 2, f.y - tp.height / 2));
       }
     }
