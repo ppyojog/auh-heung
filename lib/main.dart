@@ -514,6 +514,9 @@ class World {
   // 배경 그라데이션 셰이더 캐시(매 프레임 재생성 방지 — 성능)
   Shader? bgShader;
   String bgKey = '';
+  // 타이틀 정적 셰이더 캐시(god-ray·비네팅 — 매 프레임 createShader 방지)
+  Shader? titleRayShader, titleVignetteShader;
+  String titleShaderKey = '';
   // 성능 진단 측정값(ms, 이동평균)
   double updMs = 0, paintMs = 0;
   // 스파이크 진단: 최악 프레임(ms, 느리게 감쇠) + 최근 3초 끊김 횟수(직전 윈도 스냅샷)
@@ -2887,24 +2890,20 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                           kPortraits[world.maxPortrait.clamp(0, kPortraits.length - 1)].prog)),
                 ),
                 const SizedBox(height: 4),
-                ShaderMask(
-                  shaderCallback: (r) => const LinearGradient(
-                    colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ).createShader(r),
-                  child: const Text('어 흥',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 50,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 6,
-                          height: 1.0,
-                          shadows: [
-                            Shadow(color: Color(0xCCB7402E), blurRadius: 18),
-                            Shadow(color: Colors.black, blurRadius: 6),
-                          ])),
-                ),
+                // 로고 — ShaderMask(saveLayer) 대신 텍스트 foreground 셰이더(검증된 저비용 그라디언트 텍스트)
+                Text('어 흥',
+                    style: TextStyle(
+                        fontSize: 50,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 6,
+                        height: 1.0,
+                        foreground: Paint()
+                          ..shader = const LinearGradient(
+                            colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ).createShader(const Rect.fromLTWH(0, 0, 200, 56)),
+                        shadows: const [Shadow(color: Color(0xCCB7402E), blurRadius: 10)])),
                 const SizedBox(height: 4),
                 Text('— ${kPortraits[world.maxPortrait.clamp(0, kPortraits.length - 1)].name} —',
                     style: const TextStyle(
@@ -3918,23 +3917,19 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                           color: Color(0xFF2A1B06), fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 2)),
                 ),
                 const SizedBox(height: 6),
-                ShaderMask(
-                  shaderCallback: (r) => const LinearGradient(
-                    colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ).createShader(r),
-                  child: const Text('진  급',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 40,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 6,
-                          shadows: [
-                            Shadow(color: Color(0xCCB7402E), blurRadius: 16),
-                            Shadow(color: Colors.black, blurRadius: 6),
-                          ])),
-                ),
+                // 진급 — ShaderMask(saveLayer) 대신 foreground 셰이더
+                Text('진  급',
+                    style: TextStyle(
+                        fontSize: 40,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 6,
+                        foreground: Paint()
+                          ..shader = const LinearGradient(
+                            colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ).createShader(const Rect.fromLTWH(0, 0, 160, 46)),
+                        shadows: const [Shadow(color: Color(0xCCB7402E), blurRadius: 10)])),
               ]),
             ),
           ),
@@ -4678,31 +4673,33 @@ class WorldPainter extends CustomPainter {
       final tc = w.titleClock;
       final gx = lsize.width / 2, gy = lsize.height * 0.24;
       final pulse = 0.5 + 0.5 * sin(tc * 1.1);
-      // 상단에서 내려오는 빛 (god-ray 느낌 — 위가 밝고 아래로 감쇠)
-      canvas.drawRect(
-          Offset.zero & lsize,
-          Paint()
-            ..shader = LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [P.gold.withOpacity(0.10), Colors.transparent, Colors.transparent],
-              stops: const [0.0, 0.45, 1.0],
-            ).createShader(Offset.zero & lsize));
+      // 정적 셰이더(god-ray·비네팅)는 크기 동일하면 캐시 재사용 — 매 프레임 createShader 제거(CanvasKit 비용↓)
+      final tkey = '${lsize.width.round()}x${lsize.height.round()}';
+      if (w.titleShaderKey != tkey || w.titleRayShader == null) {
+        final rect = Offset.zero & lsize;
+        w.titleRayShader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [P.gold.withOpacity(0.10), Colors.transparent, Colors.transparent],
+          stops: const [0.0, 0.45, 1.0],
+        ).createShader(rect);
+        w.titleVignetteShader = RadialGradient(
+          center: Alignment.center,
+          radius: 0.95,
+          colors: [Colors.transparent, Colors.transparent, Colors.black.withOpacity(0.55)],
+          stops: const [0.0, 0.55, 1.0],
+        ).createShader(rect);
+        w.titleShaderKey = tkey;
+      }
+      // 상단에서 내려오는 빛 (god-ray)
+      canvas.drawRect(Offset.zero & lsize, Paint()..shader = w.titleRayShader);
       // 로고 뒤 큰 발광 펄스
       canvas.drawCircle(Offset(gx, gy), lsize.width * (0.5 + 0.05 * pulse),
           Paint()..color = P.gold.withOpacity(0.06 + 0.03 * pulse));
       canvas.drawCircle(
           Offset(gx, gy), lsize.width * 0.30, Paint()..color = P.gold.withOpacity(0.07));
       // 시네마틱 비네팅 (가장자리 어둡게 — 깊이감)
-      canvas.drawRect(
-          Offset.zero & lsize,
-          Paint()
-            ..shader = RadialGradient(
-              center: Alignment.center,
-              radius: 0.95,
-              colors: [Colors.transparent, Colors.transparent, Colors.black.withOpacity(0.55)],
-              stops: const [0.0, 0.55, 1.0],
-            ).createShader(Offset.zero & lsize));
+      canvas.drawRect(Offset.zero & lsize, Paint()..shader = w.titleVignetteShader);
       canvas.restore();
       return;
     }
