@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flame: ^1.18.0   # 검증된 Flutter 2D 게임엔진(출시 게임 표준). /lab 슬라이스에서 성능 검증용
 
 flutter:
   uses-material-design: true

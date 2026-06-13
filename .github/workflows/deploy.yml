@@ -30,16 +30,24 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # CanvasKit(WebGL/Skia — iOS·안드 둘 다 부드러운 게임 렌더) + --no-web-resources-cdn:
-      # canvaskit.wasm을 구글 CDN이 아니라 앱 도메인(GitHub Pages)에 함께 올려 로컬 로드 →
-      # iOS Safari/인앱 브라우저에서 CDN 페치 실패로 화면 비던 문제(알려진 Flutter 이슈)의 정석 해결책.
-      - name: Build web (CanvasKit + 로컬 호스팅 wasm)
-        run: flutter build web --release --web-renderer canvaskit --no-web-resources-cdn --base-href "/${{ github.event.repository.name }}/"
+      # CanvasKit + --no-web-resources-cdn: wasm을 앱 도메인(GitHub Pages)에 동봉해 로컬 로드
+      # (iOS에서 CDN 페치 실패로 화면 비던 알려진 이슈의 정석 해결책).
+      # 두 개를 한 번에 빌드·배포: 현재 게임=루트, Flame 검증 슬라이스=/lab (폰에서 A/B 비교)
+      - name: Build web — 현재 게임(루트) + Flame 슬라이스(/lab)
+        run: |
+          set -e
+          REPO="${{ github.event.repository.name }}"
+          flutter build web --release --web-renderer canvaskit --no-web-resources-cdn --base-href "/$REPO/"
+          rm -rf site && mkdir -p site
+          cp -r build/web/. site/
+          flutter build web --release --web-renderer canvaskit --no-web-resources-cdn --base-href "/$REPO/lab/" -t lib/lab.dart
+          mkdir -p site/lab
+          cp -r build/web/. site/lab/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: build/web
+          path: site
 
   deploy:
     needs: build
