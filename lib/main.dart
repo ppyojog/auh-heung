@@ -2890,20 +2890,21 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                           kPortraits[world.maxPortrait.clamp(0, kPortraits.length - 1)].prog)),
                 ),
                 const SizedBox(height: 4),
-                // 로고 — ShaderMask(saveLayer) 대신 텍스트 foreground 셰이더(검증된 저비용 그라디언트 텍스트)
-                Text('어 흥',
-                    style: TextStyle(
-                        fontSize: 50,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 6,
-                        height: 1.0,
-                        foreground: Paint()
-                          ..shader = const LinearGradient(
-                            colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ).createShader(const Rect.fromLTWH(0, 0, 200, 56)),
-                        shadows: const [Shadow(color: Color(0xCCB7402E), blurRadius: 10)])),
+                ShaderMask(
+                  shaderCallback: (r) => const LinearGradient(
+                    colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ).createShader(r),
+                  child: const Text('어 흥',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 50,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 6,
+                          height: 1.0,
+                          shadows: [Shadow(color: Color(0xCCB7402E), blurRadius: 12)])),
+                ),
                 const SizedBox(height: 4),
                 Text('— ${kPortraits[world.maxPortrait.clamp(0, kPortraits.length - 1)].name} —',
                     style: const TextStyle(
@@ -3917,19 +3918,20 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                           color: Color(0xFF2A1B06), fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 2)),
                 ),
                 const SizedBox(height: 6),
-                // 진급 — ShaderMask(saveLayer) 대신 foreground 셰이더
-                Text('진  급',
-                    style: TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 6,
-                        foreground: Paint()
-                          ..shader = const LinearGradient(
-                            colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ).createShader(const Rect.fromLTWH(0, 0, 160, 46)),
-                        shadows: const [Shadow(color: Color(0xCCB7402E), blurRadius: 10)])),
+                ShaderMask(
+                  shaderCallback: (r) => const LinearGradient(
+                    colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ).createShader(r),
+                  child: const Text('진  급',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 40,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 6,
+                          shadows: [Shadow(color: Color(0xCCB7402E), blurRadius: 12)])),
+                ),
               ]),
             ),
           ),
