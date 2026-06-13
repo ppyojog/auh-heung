@@ -770,7 +770,7 @@ class World {
   // 무기 레벨 (claw는 시작 보유 Lv1)
   int clawLv = 1, fangLv = 0, roarLv = 0, boltLv = 0, spikeLv = 0;
   // 무기 진화 (최대 레벨 + 시너지 패시브 → 초월 무기)
-  bool clawEvo = false, fangEvo = false, roarEvo = false;
+  bool clawEvo = false, fangEvo = false, roarEvo = false, boltEvo = false, spikeEvo = false;
   // 패시브 레벨
   int wildLv = 0, hideLv = 0, windLv = 0, hungerLv = 0, rageLv = 0;
   // 선택 캐릭터 + 시작 배수
@@ -926,7 +926,7 @@ class World {
   // 레벨업 전략 — 리롤(다시 뽑기) / 밴(이번 런 동안 해당 강화 제외) → 빌드를 의도대로 설계
   int rerolls = 0, banishes = 0;
   final Set<String> bannedUp = {}; // 이번 런 동안 제외된 강화 아이콘
-  static const Set<String> _evoIcons = {'🌩', '☠', '🌋'};
+  static const Set<String> _evoIcons = {'🌩', '☠', '🌋', '⛈', '🦔'};
 
   // 기록
   double bestTime = 0;
@@ -1163,7 +1163,7 @@ class World {
     roarLv = ch.startWeapon == 'roar' ? 1 : 0;
     boltLv = 0;
     spikeLv = 0;
-    clawEvo = fangEvo = roarEvo = false;
+    clawEvo = fangEvo = roarEvo = boltEvo = spikeEvo = false;
     wildLv = hideLv = windLv = hungerLv = rageLv = 0;
     specials.clear();
     specialChoice = false;
@@ -1591,9 +1591,9 @@ class World {
       if (boltT <= 0) {
         boltT = ((1.5 * pow(0.9, boltLv - 1)) / fireMult).toDouble();
         if (enemies.isNotEmpty) {
-          double dmg = (10 + boltLv * 6) * dmgMult;
+          double dmg = (10 + boltLv * 6) * dmgMult * (boltEvo ? 1.8 : 1.0);
           double fx = px, fy = py;
-          final chain = 1 + boltLv;
+          final chain = 1 + boltLv + (boltEvo ? 3 : 0);
           final hitSet = <int>{};
           for (int c = 0; c < chain; c++) {
             Enemy? nxt;
@@ -1612,7 +1612,7 @@ class World {
             hitSet.add(nxt.id);
             fx = nxt.x;
             fy = nxt.y;
-            dmg *= 0.82;
+            dmg *= boltEvo ? 0.93 : 0.82; // 진화 시 감쇠 완화(끝까지 강함)
           }
           sfx.play('hit', gapMs: 30);
         }
@@ -1623,18 +1623,21 @@ class World {
       spikeT -= dt;
       if (spikeT <= 0) {
         spikeT = ((1.8 * pow(0.92, spikeLv - 1)) / fireMult).toDouble();
-        final radius = 42 + spikeLv * 7.0;
-        final dmg = (8 + spikeLv * 6) * dmgMult;
-        final ox = px + (rng.nextDouble() - 0.5) * 160;
-        final oy = py + (rng.nextDouble() - 0.5) * 160;
-        for (final e in enemies) {
-          final rr = radius + e.radius;
-          if ((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy) <= rr * rr) {
-            _dealHit(e, dmg, P.green, 12);
+        final radius = (42 + spikeLv * 7.0) * (spikeEvo ? 1.7 : 1.0);
+        final dmg = (8 + spikeLv * 6) * dmgMult * (spikeEvo ? 2.0 : 1.0);
+        final zones = spikeEvo ? 2 : 1; // 진화 '가시 감옥' — 동시에 두 군데
+        for (int z = 0; z < zones; z++) {
+          final ox = px + (rng.nextDouble() - 0.5) * 160;
+          final oy = py + (rng.nextDouble() - 0.5) * 160;
+          for (final e in enemies) {
+            final rr = radius + e.radius;
+            if ((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy) <= rr * rr) {
+              _dealHit(e, dmg, P.green, 12);
+            }
           }
+          // 솟아오르는 가시 지대(삼각 기둥) — 이름에 맞는 연출
+          if (spikeFx.length < 8) spikeFx.add(SpikeFx(ox, oy, radius, 0.6));
         }
-        // 솟아오르는 가시 지대(삼각 기둥) — 이름에 맞는 연출
-        if (spikeFx.length < 8) spikeFx.add(SpikeFx(ox, oy, radius, 0.6));
       }
     }
     // 포효 (충격파 — 즉발 광역)
@@ -2135,6 +2138,14 @@ class World {
     if (roarLv >= 7 && hideLv >= 3 && !roarEvo) {
       evos.add(Upgrade('🌋', '진화! 대지진', '포효가 대륙을 가른다 — 범위·위력 폭증 (포효 Lv7 + 가죽)',
           () => roarEvo = true));
+    }
+    if (boltLv >= 7 && windLv >= 3 && !boltEvo) {
+      evos.add(Upgrade('⛈', '진화! 천둥폭풍', '벼락 연쇄 +3·위력↑·끝까지 강하게 (벼락 Lv7 + 바람)',
+          () => boltEvo = true));
+    }
+    if (spikeLv >= 7 && hungerLv >= 3 && !spikeEvo) {
+      evos.add(Upgrade('🦔', '진화! 가시 감옥', '가시밭이 동시에 두 군데·범위·위력 폭증 (가시밭 Lv7 + 굶주림)',
+          () => spikeEvo = true));
     }
 
     final pool = <Upgrade>[];
