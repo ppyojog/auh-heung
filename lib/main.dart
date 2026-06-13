@@ -467,10 +467,10 @@ class World {
   // 플레이어
   double px = 0, py = 0;
   double hp = 120, baseMaxHp = 120;
-  double baseSpeed = 156;
+  double baseSpeed = 178; // 이동 빠르게(속도감)
   double pr = 11; // 반지름
-  // 광기(어흥!) 궁극기 — 처치로 차오르고, 해방 시 화면 대포효 + 광폭화
-  double rage = 0, rageMax = 75, berserkT = 0;
+  // 광기(어흥!) 궁극기 — 처치로 차오르고, 해방 시 화면 대포효 + 광폭화. 더 자주 터지게 최대치↓.
+  double rage = 0, rageMax = 60, berserkT = 0;
   // 펫 타이니 — 플레이어를 졸졸 따라다니며 표정으로 반응 + 짧은 말풍선
   double petX = 0, petY = 0, petHappyT = 0;
   String petLine = '';
@@ -587,8 +587,8 @@ class World {
   // 스테이지별 난이도 — 전체적으로 더 완만하게 하향 조정(너무 높다는 피드백). 간극도 작게.
   double diffForStage(int s) => (0.62 + (s - 1) * 0.055).clamp(0.5, 2.4).toDouble();
   void _applyStageDiff() => diff = diffForStage(stage);
-  // 다음 스테이지까지 시간 — 초반은 짧게(빠른 진행감), 갈수록 길어짐
-  double _stageDuration(int s) => (13.0 + s * 2.2).clamp(13.0, 38.0).toDouble();
+  // 다음 스테이지까지 시간 — 더 짧게(빠른 진행감·잦은 분위기 전환)
+  double _stageDuration(int s) => (10.0 + s * 1.8).clamp(10.0, 32.0).toDouble();
   // 스테이지 s까지 자연 도달에 걸리는 누적 시간 → 시작 시 적 스케일 head-start로 사용
   double _stageHeadStart(int s) {
     double t = 0;
@@ -732,9 +732,9 @@ class World {
     }
     // 레벨·다음 경험치 재계산 (해당 빌드에 맞는 레벨로)
     level = 1 + ((st - 1) * 1.7).round();
-    xpNext = 4;
+    xpNext = 3;
     for (int l = 1; l < level; l++) {
-      xpNext = (xpNext * 1.22 + 2).roundToDouble();
+      xpNext = (xpNext * 1.18 + 2).roundToDouble();
     }
     // 특별스킬: 10레벨마다 1개 자동 부여(중복 없이)
     final sc = level ~/ 10;
@@ -821,7 +821,7 @@ class World {
       charSpeed *
       (berserkT > 0 ? 1.18 : 1.0);
   double get pickupRange =>
-      58 + 16.0 * hungerLv + 8 * metaLv('pick') + gearStat('pick') + (sp('magnet') ? 80 : 0);
+      72 + 16.0 * hungerLv + 8 * metaLv('pick') + gearStat('pick') + (sp('magnet') ? 80 : 0);
   // 포식(Devour) 누적 성장 — 먹을수록(처치할수록) 연속적으로 강해진다(양→호랑이 핵심 파워).
   //  레벨/선택은 '빌드 방향', 포식은 '꾸준한 누적 파워'로 역할 분리(밸런스 스윙↓).
   double get devourAtk => 0.0035 * devour; // 처치당 +0.35% 공격력 (연속)
@@ -833,6 +833,7 @@ class World {
       (berserkT > 0 ? 1.35 : 1.0) *
       (sp('fury') ? 1.25 : 1.0);
   double get fireMult =>
+      1.25 * // 기본 공속 상향(속도감·정신없는 탄막)
       (1 + 0.10 * rageLv + 0.01 * gearStat('as') + devourAs) *
       (berserkT > 0 ? 1.6 : 1.0) *
       (sp('haste') ? 1.3 : 1.0);
@@ -851,7 +852,7 @@ class World {
     _mileShown = 0;
     level = 1;
     xp = 0;
-    xpNext = 4;
+    xpNext = 3;
     // 캐릭터 적용
     final ch = kChars[charIndex.clamp(0, kChars.length - 1)];
     charDmg = ch.dmg;
@@ -1097,7 +1098,7 @@ class World {
         xp -= xpNext;
       }
       level += 1;
-      xpNext = (xpNext * 1.22 + 2).roundToDouble();
+      xpNext = (xpNext * 1.18 + 2).roundToDouble();
       _hapticBig = true;
       _shakeAdd(9);
       petHappyT = 1.6; // 펫이 신남
@@ -1144,13 +1145,13 @@ class World {
     }
     spawnT -= dt;
     if (spawnT > 0) return;
-    // 스폰 완화 — 간격 살짝 늘리고 동시 수 증가도 더 천천히(난이도 하향). 스케일은 scaleT 기준.
-    final interval = max(0.6, 2.2 - scaleT * 0.010).toDouble();
+    // 속도감 — 더 자주·더 많이 쏟아냄(화면 가득 = 정신없고 스릴↑). 개체는 약해서 즉사하니 쉽게 유지.
+    final interval = max(0.32, 1.7 - scaleT * 0.012).toDouble();
     spawnT = interval;
-    if (enemies.length > 110) return;
-    final count = 1 + (scaleT ~/ 56);
+    if (enemies.length > 150) return;
+    final count = 1 + (scaleT ~/ 38);
     for (int i = 0; i < count; i++) {
-      if (enemies.length > 110) break;
+      if (enemies.length > 150) break;
       _spawnOne();
     }
   }
@@ -1188,8 +1189,8 @@ class World {
     } else if (stage >= 2 && roll < 0.80) {
       t = EType.swarm; // 떼거리
     }
-    // 적 체력·피해 전반 하향(너무 높다는 피드백) — base 계수↓ + 접촉피해 계수↓. 스케일은 scaleT 기준.
-    final base = (8 + scaleT * 0.42) * diff;
+    // 적 체력 하향 — 즉사하듯 빠르게 터져 속도감↑(수가 많아도 쉽게). 스케일은 scaleT 기준.
+    final base = (6.5 + scaleT * 0.34) * diff;
     Enemy e;
     if (t == EType.fast) {
       e = Enemy(_eid++, x, y, base * 0.62, base * 0.62, 72 + scaleT * 0.17, (3.2 + scaleT * 0.024) * diff, 9, t);
@@ -1561,7 +1562,7 @@ class World {
     for (final e in enemies) {
       final rr = e.radius + pr;
       if ((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py) <= rr * rr) {
-        hp -= e.dmg * dt * armorMult;
+        hp -= e.dmg * dt * armorMult * 0.82; // 적 수가 많아져도 쉽게 — 접촉피해 소폭↓
         contactCdView = 0.12;
         _hapticHit = true;
         _shakeAdd(3);
@@ -1607,7 +1608,7 @@ class World {
         }
         // 분열 — 죽으면 작은 떼거리 둘로 갈라짐
         if (e.type == EType.splitter) {
-          final cb = (8 + scaleT * 0.42) * diff * 0.45;
+          final cb = (6.5 + scaleT * 0.34) * diff * 0.45;
           for (int s = 0; s < 2; s++) {
             final ang = rng.nextDouble() * 6.2831853;
             newborn.add(Enemy(_eid++, e.x + cos(ang) * 14, e.y + sin(ang) * 14, cb, cb,
