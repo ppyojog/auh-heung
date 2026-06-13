@@ -720,6 +720,8 @@ class World {
     for (int i = 0; i < sc && i < av.length; i++) {
       specials.add(av[i].id);
     }
+    // 포식 누적 성장도 그 스테이지만큼 미리 확보(고스테이지=그만큼 먹어온 상태)
+    devour = (st - 1) * 18;
     // 변신 마일스톤 대사 재생 방지(이미 호랑이로 깨어남)
     _tigerMile = level >= 13 ? 2 : (level >= 5 ? 1 : 0);
     rage = rageMax * 0.5; // 어흥! 절반 충전 상태로 시작
@@ -798,16 +800,22 @@ class World {
       (berserkT > 0 ? 1.18 : 1.0);
   double get pickupRange =>
       58 + 16.0 * hungerLv + 8 * metaLv('pick') + gearStat('pick') + (sp('magnet') ? 80 : 0);
+  // 포식(Devour) 누적 성장 — 먹을수록(처치할수록) 연속적으로 강해진다(양→호랑이 핵심 파워).
+  //  레벨/선택은 '빌드 방향', 포식은 '꾸준한 누적 파워'로 역할 분리(밸런스 스윙↓).
+  double get devourAtk => 0.0035 * devour; // 처치당 +0.35% 공격력 (연속)
+  double get devourAs => 0.0018 * devour; // 처치당 +0.18% 공속
   double get dmgMult =>
-      (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + 0.01 * gearStat('dmg')) *
+      (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + 0.01 * gearStat('dmg') + devourAtk) *
       charDmg *
       (berserkT > 0 ? 1.35 : 1.0) *
       (sp('fury') ? 1.25 : 1.0);
   double get fireMult =>
-      (1 + 0.10 * rageLv + 0.01 * gearStat('as')) * (berserkT > 0 ? 1.6 : 1.0) * (sp('haste') ? 1.3 : 1.0);
+      (1 + 0.10 * rageLv + 0.01 * gearStat('as') + devourAs) *
+      (berserkT > 0 ? 1.6 : 1.0) *
+      (sp('haste') ? 1.3 : 1.0);
   double get armorMult => sp('armor') ? 0.78 : 1.0; // 받는 피해 배수
-  // 경험치 배수 — 스테이지가 높을수록 구슬이 더 많은 XP(높은 난이도 보상·빠른 성장)
-  double get xpMult => 1.0 + (stage - 1) * 0.2;
+  // 경험치 배수 — 스테이지 보너스 완화(누적 성장이 고스테이지 파워를 담당하므로 레벨 폭주 방지)
+  double get xpMult => 1.0 + (stage - 1) * 0.1;
   bool get rageReady => rage >= rageMax;
 
   void toggleMute() => sfx.muted = !sfx.muted;
@@ -2731,6 +2739,28 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   _statBox('🧲 수집범위', '$pickV'),
                   _statBox('💗 재생', regenV > 0 ? '${regenV.toStringAsFixed(1)}/s' : '–'),
                 ]),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: P.blood.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: P.blood.withOpacity(0.5)),
+                  ),
+                  child: Row(children: [
+                    const Text('🍖', style: TextStyle(fontSize: 20)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Text('포식 성장 (먹을수록 누적·연속)',
+                            style: TextStyle(color: P.goldSoft, fontSize: 12, fontWeight: FontWeight.bold)),
+                        Text(
+                            '처치 ${world.devour} · 공격 +${(world.devourAtk * 100).round()}% · 공속 +${(world.devourAs * 100).round()}%',
+                            style: const TextStyle(color: P.parch, fontSize: 11)),
+                      ]),
+                    ),
+                  ]),
+                ),
                 const SizedBox(height: 16),
                 const Text('🛠 장비 — 장착 시 영구 적용 (보스 전리품·대장간 구매)',
                     style: TextStyle(color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
