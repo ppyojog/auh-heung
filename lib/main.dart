@@ -16,6 +16,9 @@ import 'package:flutter/services.dart';
 // 카메라 줌 아웃 — 논리 아레나 = 화면 / kZoom (더 넓어 보이게). 1.0=원본, <1=멀리.
 const double kZoom = 0.7;
 
+// 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
+const String kSaveVer = 'v2026.06.13-1';
+
 void main() => runApp(const SurvivorApp());
 
 class P {
@@ -191,6 +194,24 @@ class Character {
 const List<Character> kChars = [
   Character('lamb', '호랑이가 되고 싶은 양', '🐑',
       '순한 양. 하지만 사냥할수록 발톱이 돋고, 호랑이로 깨어난다.', P.gold, 'claw'),
+];
+
+// 초상화(Portrait) 진급 — 레벨에 따라 양→호랑이 단계가 '짜잔' 공개되고, 단계마다 능력치 상승.
+//  prog: 외형(0=양 ~ 1=완전 호랑이). bonus: 그 단계의 '누적 총량'(dmg%·hp·spd%·as%).
+class Portrait {
+  final String id, name, desc;
+  final int reqLevel;
+  final double prog;
+  final Map<String, double> bonus;
+  const Portrait(this.id, this.name, this.desc, this.reqLevel, this.prog, this.bonus);
+}
+
+const List<Portrait> kPortraits = [
+  Portrait('p0', '순한 양', '아직은 그저 순한 양.', 1, 0.0, {}),
+  Portrait('p1', '야성을 깨운 양', '발톱이 돋고 눈빛이 사나워졌다.', 4, 0.30, {'dmg': 10, 'hp': 20}),
+  Portrait('p2', '반(半)호랑이', '양의 탈을 절반쯤 벗었다.', 8, 0.55, {'dmg': 20, 'hp': 45, 'spd': 5}),
+  Portrait('p3', '호랑이', '마침내 호랑이로 깨어났다.', 13, 0.80, {'dmg': 32, 'hp': 80, 'spd': 8, 'as': 8}),
+  Portrait('p4', '백수(百獸)의 왕', '대륙이 두려워하는 폭군.', 20, 1.0, {'dmg': 46, 'hp': 130, 'spd': 12, 'as': 16}),
 ];
 
 // 특별스킬 — 10레벨마다 1개 선택(중복 불가). 판을 뒤집는 강력한 한 방.
@@ -501,15 +522,16 @@ class World {
   // 포식(Devour) — 삼킬수록 회복 + 호랑이가 점점 커짐 (양→호랑이 USP)
   int devour = 0;
   int cheatPending = 0; // [치트] 대기 중인 강제 레벨업(스킬 선택) 횟수
-  // 양→호랑이 변신 진척(0=양, 1=완전한 호랑이). 레벨이 주 동력 + 포식 보조.
-  double get tigerProg => ((level - 1) / 13.0 + devour / 700.0).clamp(0.0, 1.0);
+  // 양→호랑이 외형 — 현재 초상화 단계의 prog(이산). 초상화 진급 때 '짜잔' 바뀜.
+  double get tigerProg => kPortraits[portraitTier.clamp(0, kPortraits.length - 1)].prog;
+  int portraitTier = 0; // 현재 초상화 단계
+  double portraitBonus(String k) =>
+      kPortraits[portraitTier.clamp(0, kPortraits.length - 1)].bonus[k] ?? 0;
   // 크기는 거의 고정 — 무한정 커지지 않게(성장은 '모핑'으로 표현). 호랑이로 갈수록 아주 약간만 커짐.
   double get growScale => 1.0 + tigerProg * 0.08;
-  int _tigerMile = 0; // 변신 마일스톤
-  // 호랑이 각성 컷신
-  double morphT = 0; // 컷신 남은 시간
+  // 초상화 진급 '짜잔' 컷신 (탭해야 닫힘)
   double morphClock = 0; // 컷신 경과(연출용)
-  int morphStage = 0; // 1=첫 각성, 2=완전체
+  int morphFromTier = 0; // 직전 단계(능력치 상승분 표시용)
   bool _morphPendingChoice = false; // 컷신 후 강화 선택 열기
   bool _morphPendingSpecial = false; // 그 선택이 특별스킬인지
   // 특별스킬(10레벨마다 1개) — 보유 집합 + 선택중 플래그
@@ -770,8 +792,11 @@ class World {
     }
     // 포식 누적 성장도 그 스테이지만큼 미리 확보(고스테이지=그만큼 먹어온 상태)
     devour = (st - 1) * 18;
-    // 변신 마일스톤 대사 재생 방지(이미 호랑이로 깨어남)
-    _tigerMile = level >= 13 ? 2 : (level >= 5 ? 1 : 0);
+    // 초상화 단계도 현재 레벨에 맞춰 즉시 적용(컷신 없이 이미 그 모습으로 시작)
+    portraitTier = 0;
+    for (int i = 0; i < kPortraits.length; i++) {
+      if (level >= kPortraits[i].reqLevel) portraitTier = i;
+    }
     rage = rageMax * 0.5; // 어흥! 절반 충전 상태로 시작
     hp = maxHp;
   }
@@ -831,6 +856,7 @@ class World {
   bool _hapticHit = false, _hapticBig = false;
 
   World() {
+    _checkSaveVersion(); // 버전 바뀌면 세이브 초기화
     try {
       slot = (int.tryParse(html.window.localStorage['surv_slot'] ?? '1') ?? 1).clamp(1, 3);
     } catch (_) {}
@@ -838,6 +864,21 @@ class World {
     _loadRecords();
     _loadMeta();
     _checkDaily();
+  }
+
+  // 세이브 버전 검사 — kSaveVer가 바뀌면 전 슬롯 세이브 삭제(설정은 유지)
+  void _checkSaveVersion() {
+    try {
+      final v = html.window.localStorage['surv_ver'];
+      if (v != kSaveVer) {
+        for (int s = 1; s <= 3; s++) {
+          html.window.localStorage.remove('surv_rec_$s');
+          html.window.localStorage.remove('surv_meta_$s');
+        }
+        html.window.localStorage.remove('surv_slot');
+        html.window.localStorage['surv_ver'] = kSaveVer;
+      }
+    } catch (_) {}
   }
 
   // ── 옵션 저장/로드 (전역) ──
@@ -870,11 +911,12 @@ class World {
     } catch (_) {}
   }
 
-  // ── 파생 스탯 (캐릭터 배수 + 광폭화 + 영구 강화(meta) 반영) ──
-  double get maxHp => (baseMaxHp + 25 * hideLv + 15 * metaLv('hp') + gearStat('hp')) * charHp;
+  // ── 파생 스탯 (캐릭터 배수 + 광폭화 + 영구강화(meta) + 장비 + 초상화 진급 반영) ──
+  double get maxHp =>
+      (baseMaxHp + 25 * hideLv + 15 * metaLv('hp') + gearStat('hp') + portraitBonus('hp')) * charHp;
   double get speed =>
       baseSpeed *
-      (1 + 0.10 * windLv + 0.04 * metaLv('spd') + 0.01 * gearStat('spd')) *
+      (1 + 0.10 * windLv + 0.04 * metaLv('spd') + 0.01 * gearStat('spd') + 0.01 * portraitBonus('spd')) *
       charSpeed *
       (berserkT > 0 ? 1.18 : 1.0);
   double get pickupRange =>
@@ -884,14 +926,14 @@ class World {
   double get devourAtk => 0.0035 * devour; // 처치당 +0.35% 공격력 (연속)
   double get devourAs => 0.0018 * devour; // 처치당 +0.18% 공속
   double get dmgMult =>
-      (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + 0.01 * gearStat('dmg') + devourAtk) *
+      (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + 0.01 * gearStat('dmg') + 0.01 * portraitBonus('dmg') + devourAtk) *
       charDmg *
       comboDmg *
       (berserkT > 0 ? 1.35 : 1.0) *
       (sp('fury') ? 1.25 : 1.0);
   double get fireMult =>
       1.25 * // 기본 공속 상향(속도감·정신없는 탄막)
-      (1 + 0.10 * rageLv + 0.01 * gearStat('as') + devourAs) *
+      (1 + 0.10 * rageLv + 0.01 * gearStat('as') + 0.01 * portraitBonus('as') + devourAs) *
       (berserkT > 0 ? 1.6 : 1.0) *
       (sp('haste') ? 1.3 : 1.0);
   double get armorMult => sp('armor') ? 0.78 : 1.0; // 받는 피해 배수
@@ -924,10 +966,9 @@ class World {
     wildLv = hideLv = windLv = hungerLv = rageLv = 0;
     specials.clear();
     specialChoice = false;
-    _tigerMile = 0;
-    morphT = 0;
+    portraitTier = 0;
     morphClock = 0;
-    morphStage = 0;
+    morphFromTier = 0;
     _morphPendingChoice = false;
     _morphPendingSpecial = false;
     clawT = 0;
@@ -1050,23 +1091,10 @@ class World {
 
   // ── 메인 업데이트 ──
   void update(double dt) {
-    // 호랑이 각성 컷신 — 잠깐 멈추고 연출. 끝나면 (대기 중이던) 강화 선택을 연다.
+    // 초상화 진급 '짜잔' 컷신 — 멈춰서 연출. 탭(dismissMorph)해야만 닫힌다.
     if (phase == GPhase.morph) {
       if (dt > 0.05) dt = 0.05;
       morphClock += dt;
-      morphT -= dt;
-      if (morphT <= 0) {
-        if (_morphPendingChoice) {
-          _morphPendingChoice = false;
-          if (_morphPendingSpecial) {
-            _openSpecial();
-          } else {
-            _openLevelUp();
-          }
-        } else {
-          phase = GPhase.playing;
-        }
-      }
       return;
     }
     if (phase != GPhase.playing) return;
@@ -1188,17 +1216,12 @@ class World {
       pulses.add(Pulse(px, py, 120, 0.5, P.gold));
       _flash(P.gold, 0.35);
       final wantSpecial = level % 10 == 0 && specials.length < kSpecials.length;
-      // 양→호랑이 각성 컷신 (레벨 기준 → 치트·자연 레벨업 동일). 끝나면 강화 선택 이어짐.
-      int? morphTo;
-      if (_tigerMile < 1 && level >= 5) {
-        morphTo = 1;
-      } else if (_tigerMile < 2 && level >= 13) {
-        morphTo = 2;
-      }
-      if (morphTo != null) {
-        _tigerMile = morphTo;
+      // 초상화 진급 — 다음 단계 요구레벨 도달 시 '짜잔' 컷신(레벨 기준 → 치트·자연 동일). 능력치도 상승.
+      if (portraitTier + 1 < kPortraits.length && level >= kPortraits[portraitTier + 1].reqLevel) {
+        final from = portraitTier;
+        portraitTier += 1;
         _morphPendingSpecial = wantSpecial;
-        _triggerMorph(morphTo);
+        _triggerMorph(from);
         return;
       }
       _say(_pick(Tiny.level), force: true, face: '😺');
@@ -1854,15 +1877,30 @@ class World {
     if (shake > 0) shake = max(0, shake - dt * 26);
   }
 
-  // 호랑이 각성 컷신 시작 — 화면을 멈추고 멋진 변신 연출
-  void _triggerMorph(int s) {
-    morphStage = s;
-    morphT = 2.7;
+  // 초상화 진급 '짜잔' 컷신 시작 — 화면을 멈추고 새 초상화 공개(탭해야 닫힘)
+  void _triggerMorph(int fromTier) {
+    morphFromTier = fromTier;
     morphClock = 0;
     _morphPendingChoice = true;
     phase = GPhase.morph;
     _hapticBig = true;
+    _shakeAdd(10);
     sfx.play('boss'); // 묵직한 각성음
+  }
+
+  // 컷신 닫기(탭) — 연출 0.4초 지난 뒤에만(실수 방지). 닫으면 대기 중 강화 선택 열림.
+  void dismissMorph() {
+    if (phase != GPhase.morph || morphClock < 0.4) return;
+    if (_morphPendingChoice) {
+      _morphPendingChoice = false;
+      if (_morphPendingSpecial) {
+        _openSpecial();
+      } else {
+        _openLevelUp();
+      }
+    } else {
+      phase = GPhase.playing;
+    }
   }
 
   // ── 레벨업 강화 ──
@@ -2893,6 +2931,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
               children: [
+                _portraitCard(),
+                const SizedBox(height: 14),
                 const Text('능력치 (영구: 강화 + 장비)',
                     style: TextStyle(color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
@@ -3277,58 +3317,149 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ── 호랑이 각성 컷신 — 빛줄기·확산 링·아바타 모핑 + 각성 텍스트(뽕) ──
+  // ── 초상화 진급 '짜잔' 컷신 — 새 초상화 공개 + 능력치 상승 + 탭하여 계속 ──
   Widget _morphOverlay() {
     final c = world.morphClock;
-    final stage2 = world.morphStage >= 2;
-    final titleA = ((c - 0.45) / 0.4).clamp(0.0, 1.0);
-    final titlePop = 0.7 + 0.3 * titleA + (titleA > 0.0 && c < 1.0 ? sin(titleA * 3.14) * 0.12 : 0.0);
-    final fade = world.morphT < 0.4 ? (world.morphT / 0.4).clamp(0.0, 1.0) : 1.0;
+    final pt = kPortraits[world.portraitTier.clamp(0, kPortraits.length - 1)];
+    final prev = kPortraits[world.morphFromTier.clamp(0, kPortraits.length - 1)];
+    final titleA = ((c - 0.35) / 0.35).clamp(0.0, 1.0);
+    final titlePop = 0.6 + 0.4 * titleA + (c < 0.9 ? sin(titleA * 3.14) * 0.15 : 0.0);
+    // 능력치 상승분(이전 단계 대비)
+    final gains = <String>[];
+    void g(String k, String label, String unit) {
+      final d = (pt.bonus[k] ?? 0) - (prev.bonus[k] ?? 0);
+      if (d > 0) gains.add('$label +${d.round()}$unit');
+    }
+
+    g('dmg', '공격', '%');
+    g('as', '공속', '%');
+    g('hp', '체력', '');
+    g('spd', '이동', '%');
+    final blink = (c % 1.0) < 0.5;
     return GestureDetector(
-      onTap: () => setState(() => world.morphT = world.morphT > 0.35 ? 0.35 : world.morphT),
-      child: Opacity(
-        opacity: fade,
-        child: Stack(children: [
-          Positioned.fill(child: CustomPaint(painter: MorphPainter(world))),
-          Align(
-            alignment: const Alignment(0, -0.52),
-            child: Transform.scale(
-              scale: titlePop,
-              child: Opacity(
-                opacity: titleA,
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text(stage2 ? '완전한 호랑이' : '각  성',
-                      style: TextStyle(
-                          color: P.gold,
-                          fontSize: stage2 ? 34 : 38,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 4,
-                          shadows: [
-                            Shadow(color: P.blood.withOpacity(0.9), blurRadius: 16),
-                            const Shadow(color: Colors.black, blurRadius: 6),
-                          ])),
-                  const SizedBox(height: 6),
-                  Text(stage2 ? '대륙이 두려워하는 폭군이 되다' : '양의 탈을 벗고, 호랑이로 깨어나다',
-                      style: const TextStyle(
-                          color: P.goldSoft,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.bold,
-                          shadows: [Shadow(color: Colors.black, blurRadius: 4)])),
-                ]),
-              ),
-            ),
-          ),
-          Align(
-            alignment: const Alignment(0, 0.62),
+      onTap: () => setState(() => world.dismissMorph()),
+      child: Stack(children: [
+        Positioned.fill(child: CustomPaint(painter: MorphPainter(world))),
+        // 새 초상화 이름 (위)
+        Align(
+          alignment: const Alignment(0, -0.62),
+          child: Transform.scale(
+            scale: titlePop,
             child: Opacity(
-              opacity: (titleA * 0.7),
-              child: const Text('어 흥 —!',
-                  style: TextStyle(
-                      color: P.red, fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 6)),
+              opacity: titleA,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Text('— 진 급 —',
+                    style: TextStyle(color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 3)),
+                const SizedBox(height: 4),
+                Text(pt.name,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: P.gold,
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                        shadows: [
+                          Shadow(color: P.blood.withOpacity(0.9), blurRadius: 16),
+                          const Shadow(color: Colors.black, blurRadius: 6),
+                        ])),
+              ]),
             ),
           ),
-        ]),
+        ),
+        // 설명 + 능력치 상승 (아래)
+        Align(
+          alignment: const Alignment(0, 0.45),
+          child: Opacity(
+            opacity: titleA,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(pt.desc,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: P.parch, fontSize: 13.5, shadows: [Shadow(color: Colors.black, blurRadius: 4)])),
+              if (gains.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: P.gold.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: P.gold.withOpacity(0.6)),
+                  ),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('능력치 상승!',
+                        style: TextStyle(color: P.goldSoft, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text('▲  ${gains.join("   ")}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: P.green, fontSize: 14, fontWeight: FontWeight.bold)),
+                  ]),
+                ),
+              ],
+              const SizedBox(height: 22),
+              Opacity(
+                opacity: c > 0.4 ? (blink ? 1.0 : 0.35) : 0.0,
+                child: const Text('👆 탭하여 계속',
+                    style: TextStyle(color: P.muted, fontSize: 13, fontWeight: FontWeight.bold)),
+              ),
+            ]),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  // 초상화 시스템 카드 — 현재 단계 + 진급 경로(레벨별). 진급마다 능력치 상승.
+  Widget _portraitCard() {
+    final cur = world.portraitTier.clamp(0, kPortraits.length - 1);
+    final p = kPortraits[cur];
+    final next = cur + 1 < kPortraits.length ? kPortraits[cur + 1] : null;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: P.gold.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: P.gold.withOpacity(0.6)),
       ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Text('🖼 초상화', style: TextStyle(color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          Text(p.name, style: const TextStyle(color: P.gold, fontSize: 14, fontWeight: FontWeight.bold)),
+        ]),
+        const SizedBox(height: 8),
+        Row(
+          children: List.generate(kPortraits.length, (i) {
+            final reached = i <= cur;
+            final on = i == cur;
+            return Expanded(
+              child: Container(
+                margin: EdgeInsets.only(right: i < kPortraits.length - 1 ? 5 : 0),
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: on
+                      ? P.gold
+                      : (reached ? P.gold.withOpacity(0.3) : Colors.black.withOpacity(0.3)),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: reached ? P.gold.withOpacity(0.7) : P.line),
+                ),
+                child: Text('Lv${kPortraits[i].reqLevel}',
+                    style: TextStyle(
+                        color: on ? Colors.black : (reached ? P.goldSoft : P.muted),
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold)),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 8),
+        Text(p.desc, style: const TextStyle(color: P.parch, fontSize: 11.5)),
+        if (next != null) ...[
+          const SizedBox(height: 3),
+          Text('다음 진급: Lv ${next.reqLevel} → ${next.name} (능력치↑)',
+              style: const TextStyle(color: P.muted, fontSize: 10.5)),
+        ],
+      ]),
     );
   }
 
@@ -4409,10 +4540,10 @@ class MorphPainter extends CustomPainter {
     final t = w.morphClock;
     final cx = size.width / 2, cy = size.height * 0.42;
     final R = min(size.width, size.height) * 0.17;
-    final tg = ((t - 0.45) / 0.9).clamp(0.0, 1.0); // 호랑이화 정도 0→1
-    final av = (t * 2.4).clamp(0.0, 1.0); // 아바타 등장 스케일
-    final breathe = 1 + sin(t * 5) * 0.04;
-    final r = R * av * breathe;
+    final tg = w.tigerProg; // 새 초상화 단계의 외형(짜잔 — 바로 새 모습)
+    // 짜잔 등장: 빠르게 커졌다가(오버슈트) 안정. + 숨쉬기
+    final av = t < 0.3 ? (t / 0.3) * 1.18 : (1.0 + sin((t - 0.3) * 5) * 0.05);
+    final r = R * av.clamp(0.0, 1.3);
 
     // 회전 빛줄기
     final rayLen = R * (1.6 + sin(t * 4) * 0.25);
