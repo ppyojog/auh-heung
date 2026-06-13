@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-7';
+const String kSaveVer = 'v2026.06.13-8';
 
 void main() => runApp(const SurvivorApp());
 
@@ -411,7 +411,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, travel, options, diag, morph, notice }
+enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, forge, travel, options, diag, morph, notice }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -2248,6 +2248,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   GPhase _lastPhase = GPhase.title;
   double _fps = 60;
+  int _gearFilter = 0; // 장비 슬롯 필터 0=전체 1=무기 2=방어구 3=장신구
   void _onTick(Duration elapsed) {
     final dt = _last == Duration.zero ? 0.0 : (elapsed - _last).inMicroseconds / 1000000.0;
     _last = elapsed;
@@ -2308,6 +2309,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.skins) _skinsOverlay(),
             if (world.phase == GPhase.status) _statusOverlay(),
             if (world.phase == GPhase.inventory) _inventoryOverlay(),
+            if (world.phase == GPhase.forge) _forgeOverlay(),
             if (world.phase == GPhase.travel) _travelOverlay(),
             if (world.phase == GPhase.options) _optionsOverlay(),
             if (world.phase == GPhase.diag) _diagOverlay(),
@@ -3154,8 +3156,19 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 _equipSlotRow(GearSlot.armor, '방어구'),
                 _equipSlotRow(GearSlot.trinket, '장신구'),
                 const SizedBox(height: 10),
-                _bigBtn('🎒  인벤토리에서 장착 · 구매', P.cyan,
-                    () => setState(() => world.phase = GPhase.inventory)),
+                Row(children: [
+                  Expanded(
+                      child: _actBtn('🎒 창고', P.cyan, false, () => setState(() {
+                            _gearFilter = 0;
+                            world.phase = GPhase.inventory;
+                          }))),
+                  const SizedBox(width: 10),
+                  Expanded(
+                      child: _actBtn('⚒ 대장간', P.panel, false, () => setState(() {
+                            _gearFilter = 0;
+                            world.phase = GPhase.forge;
+                          }))),
+                ]),
                 if (inRun) ...[
                   const SizedBox(height: 16),
                   const Text('이번 런 빌드',
@@ -3180,7 +3193,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     return Padding(
       padding: const EdgeInsets.only(bottom: 7),
       child: GestureDetector(
-        onTap: () => setState(() => world.phase = GPhase.inventory),
+        onTap: () => setState(() {
+          _gearFilter = s.index + 1; // 그 슬롯만 보이게
+          world.phase = GPhase.inventory;
+        }),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
@@ -3209,24 +3225,95 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   }
 
   // ── 창고 / 대장간 — 보유·구매 장비 목록(장착/구매) ──
+  // 슬롯 필터 탭 (전체/무기/방어구/장신구)
+  Widget _slotTabs() {
+    const labels = ['전체', '🗡 무기', '🛡 방어구', '💍 장신구'];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+      child: Row(
+        children: List.generate(4, (i) {
+          final on = _gearFilter == i;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _gearFilter = i),
+              child: Container(
+                margin: EdgeInsets.only(right: i < 3 ? 6 : 0),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: on ? P.gold : Colors.black.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: on ? P.gold : P.line),
+                ),
+                child: Text(labels[i],
+                    style: TextStyle(
+                        color: on ? Colors.black : P.parch,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold)),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  bool _gearInFilter(Gear g) => _gearFilter == 0 || g.slot.index == _gearFilter - 1;
+
+  // ── 창고 — 보유한 장비만. 슬롯 필터 + 장착(구매는 대장간에서) ──
   Widget _inventoryOverlay() {
+    final owned = kGear.where((g) => world.ownedGear.contains(g.id) && _gearInFilter(g)).toList();
     return Container(
       color: const Color(0xF20A0806),
       child: SafeArea(
         child: Column(children: [
-          _ohead('🎒', '창고 · 대장간'),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(18, 0, 18, 4),
-            child: Text('보유 장비는 [장착], 미보유는 🦷로 대장간 구매. 슬롯당 1개.',
-                style: TextStyle(color: P.muted, fontSize: 11)),
+          _ohead('🎒', '창고', fangs: false, trailing: '보유 ${world.ownedGear.length}/${kGear.length}'),
+          _slotTabs(),
+          Expanded(
+            child: owned.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                          _gearFilter == 0
+                              ? '아직 보유한 장비가 없습니다.\n보스를 잡거나 ⚒ 대장간에서 구매하세요.'
+                              : '이 슬롯에 보유한 장비가 없습니다.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: P.muted, fontSize: 13, height: 1.5)),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+                    children: owned.map((g) => _gearRow(g)).toList(),
+                  ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: _actBtn('⚒  대장간에서 장비 구매', P.cyan, false,
+                () => setState(() => world.phase = GPhase.forge)),
+          ),
+          _backBar(world.statusReturn),
+        ]),
+      ),
+    );
+  }
+
+  // ── 대장간 — 송곳니로 장비 구매. 슬롯 필터 ──
+  Widget _forgeOverlay() {
+    final list = kGear.where(_gearInFilter).toList();
+    return Container(
+      color: const Color(0xF20A0806),
+      child: SafeArea(
+        child: Column(children: [
+          _ohead('⚒', '대장간'),
+          _slotTabs(),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-              children: kGear.map((g) => _gearRow(g)).toList(),
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+              children: list.map((g) => _gearRow(g)).toList(),
             ),
           ),
-          _backBar(GPhase.status, label: '장비로'),
+          _backBar(GPhase.inventory, label: '창고로'),
         ]),
       ),
     );
@@ -4177,23 +4264,25 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 98,
-          height: 92,
+          width: 78,
+          height: 74,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: P.panel,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: accent.withOpacity(0.55), width: 1.4),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [accent.withOpacity(0.16), Colors.black.withOpacity(0.32)],
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: accent.withOpacity(0.55), width: 1.3),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 5)],
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Text(icon, style: const TextStyle(fontSize: 27)),
-            const SizedBox(height: 6),
-            Text(title, style: TextStyle(color: accent, fontSize: 13, fontWeight: FontWeight.bold)),
+            Text(icon, style: const TextStyle(fontSize: 23)),
+            const SizedBox(height: 3),
+            Text(title, style: TextStyle(color: accent, fontSize: 11.5, fontWeight: FontWeight.bold)),
             if (sub.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 1),
-                child: Text(sub, style: const TextStyle(color: P.muted, fontSize: 9)),
-              ),
+              Text(sub, style: const TextStyle(color: P.muted, fontSize: 8)),
           ]),
         ),
       );
@@ -4201,8 +4290,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   // 허브 타일 그리드 (타이틀·일시정지 공용) — 일관된 메뉴 진입
   Widget _hubGrid({required GPhase from}) {
     return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: 8,
+      runSpacing: 8,
       alignment: WrapAlignment.center,
       children: [
         _navTile('💪', '단련', P.gold, () => setState(() {
@@ -4214,9 +4303,15 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               world.phase = GPhase.status;
             }), sub: '능력치'),
         _navTile('🎒', '창고', P.green, () => setState(() {
+              _gearFilter = 0;
               world.statusReturn = from;
               world.phase = GPhase.inventory;
-            }), sub: '장비 획득'),
+            }), sub: '보유 장비'),
+        _navTile('⚒', '대장간', const Color(0xFFE8702E), () => setState(() {
+              _gearFilter = 0;
+              world.statusReturn = from;
+              world.phase = GPhase.forge;
+            }), sub: '장비 구매'),
         _navTile('🏆', '업적', P.goldSoft, () => setState(() {
               world.statusReturn = from;
               world.phase = GPhase.achieve;
