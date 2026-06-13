@@ -208,6 +208,41 @@ const List<Special> kSpecials = [
   Special('freeze', '❄', '서리 손길', '맞은 적이 잠시 얼어붙는다'),
 ];
 
+// 장비(RPG식) — 3슬롯(무기/방어구/장신구) · 레어도 · 스탯 보너스. 영구 보유·장착(메타).
+//  획득: 보스 전리품(루트 드랍) + 대장간(송곳니 구매). 가챠·다크패턴 없음(결정형, 윤리적).
+//  근거: Death Must Die / Halls of Torment식 슬롯 장비 + 레어도.
+enum GearSlot { weapon, armor, trinket }
+
+class Gear {
+  final String id, name, icon, desc;
+  final GearSlot slot;
+  final int rarity; // 0 일반 · 1 희귀 · 2 영웅 · 3 전설
+  final int cost; // 송곳니 (대장간 구매가)
+  final Map<String, double> stats; // dmg% · as%(공속) · hp · spd% · pick · regen(/s)
+  const Gear(this.id, this.name, this.icon, this.slot, this.rarity, this.cost, this.stats, this.desc);
+}
+
+const List<Gear> kGear = [
+  // 무기 각인 (공격력·공속)
+  Gear('w0', '무쇠 발톱', '🗡', GearSlot.weapon, 0, 40, {'dmg': 8}, '공격력 +8%'),
+  Gear('w1', '예리한 발톱', '🗡', GearSlot.weapon, 1, 95, {'dmg': 14, 'as': 8}, '공격력 +14% · 공속 +8%'),
+  Gear('w2', '폭풍의 발톱', '🗡', GearSlot.weapon, 2, 190, {'dmg': 22, 'as': 14}, '공격력 +22% · 공속 +14%'),
+  Gear('w3', '백호의 발톱', '🗡', GearSlot.weapon, 3, 340, {'dmg': 34, 'as': 18}, '전설 · 공격력 +34% · 공속 +18%'),
+  // 방어구 (체력·재생)
+  Gear('a0', '두꺼운 가죽', '🛡', GearSlot.armor, 0, 35, {'hp': 35}, '최대체력 +35'),
+  Gear('a1', '상흔의 가죽', '🛡', GearSlot.armor, 1, 90, {'hp': 60, 'regen': 0.5}, '체력 +60 · 재생 0.5/s'),
+  Gear('a2', '강철 비늘', '🛡', GearSlot.armor, 2, 180, {'hp': 95, 'regen': 1.0}, '체력 +95 · 재생 1.0/s'),
+  Gear('a3', '불멸의 가죽', '🛡', GearSlot.armor, 3, 320, {'hp': 150, 'regen': 1.6}, '전설 · 체력 +150 · 재생 1.6/s'),
+  // 장신구 (이동·수집·잡탕)
+  Gear('t0', '바람 부적', '💍', GearSlot.trinket, 0, 35, {'spd': 6, 'pick': 12}, '이동 +6% · 수집 +12'),
+  Gear('t1', '탐욕의 부적', '💍', GearSlot.trinket, 1, 90, {'spd': 8, 'pick': 26}, '이동 +8% · 수집 +26'),
+  Gear('t2', '사냥꾼의 부적', '💍', GearSlot.trinket, 2, 180, {'spd': 12, 'pick': 30, 'as': 8}, '이동 +12% · 수집 +30 · 공속 +8%'),
+  Gear('t3', '폭군의 인장', '💍', GearSlot.trinket, 3, 320, {'spd': 14, 'dmg': 12, 'pick': 30}, '전설 · 이동 +14% · 공격 +12% · 수집 +30'),
+];
+
+const List<Color> kRarityCol = [P.parch, P.cyan, P.purple, P.gold];
+const List<String> kRarityName = ['일반', '희귀', '영웅', '전설'];
+
 // =============================================================================
 //  사운드 — 에셋 0. Dart에서 PCM 합성 → WAV → data URI → AudioElement 재생.
 //  (Web Audio API 메서드명 리스크 회피, 전부 안정적인 표준 API)
@@ -336,7 +371,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins }
+enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -424,14 +459,60 @@ class World {
   // 포식(Devour) — 삼킬수록 회복 + 호랑이가 점점 커짐 (양→호랑이 USP)
   int devour = 0;
   int cheatPending = 0; // [치트] 대기 중인 강제 레벨업(스킬 선택) 횟수
-  double get growScale => (0.9 + devour * 0.005).clamp(0.9, 1.6);
   // 양→호랑이 변신 진척(0=양, 1=완전한 호랑이). 레벨이 주 동력 + 포식 보조.
   double get tigerProg => ((level - 1) / 13.0 + devour / 700.0).clamp(0.0, 1.0);
+  // 크기는 거의 고정 — 무한정 커지지 않게(성장은 '모핑'으로 표현). 호랑이로 갈수록 아주 약간만 커짐.
+  double get growScale => 1.0 + tigerProg * 0.08;
   int _tigerMile = 0; // 변신 대사 마일스톤
   // 특별스킬(10레벨마다 1개) — 보유 집합 + 선택중 플래그
   final Set<String> specials = {};
   bool specialChoice = false;
   bool sp(String id) => specials.contains(id);
+
+  // 장비(RPG) — 보유 + 슬롯별 장착(영구). 시작 스테이지 선택값.
+  final Set<String> ownedGear = {};
+  final Map<GearSlot, String> equipped = {}; // slot → gearId
+  int startStage = 1; // 타이틀/사망 화면에서 고른 시작 스테이지
+  GPhase statusReturn = GPhase.title; // 상태창에서 돌아갈 화면
+
+  Gear? gearById(String id) {
+    for (final g in kGear) {
+      if (g.id == id) return g;
+    }
+    return null;
+  }
+
+  // 장착 장비들의 스탯 합 (key: dmg/as/hp/spd/pick/regen)
+  double gearStat(String key) {
+    double sum = 0;
+    for (final id in equipped.values) {
+      final g = gearById(id);
+      if (g != null) sum += g.stats[key] ?? 0;
+    }
+    return sum;
+  }
+
+  bool buyGear(String id) {
+    final g = gearById(id);
+    if (g == null || ownedGear.contains(id) || fangs < g.cost) return false;
+    fangs -= g.cost;
+    ownedGear.add(id);
+    equipped[g.slot] ??= id; // 첫 구매면 자동 장착
+    _saveMeta();
+    return true;
+  }
+
+  void equipGear(String id) {
+    final g = gearById(id);
+    if (g == null || !ownedGear.contains(id)) return;
+    equipped[g.slot] = id;
+    _saveMeta();
+  }
+
+  void unequipSlot(GearSlot s) {
+    equipped.remove(s);
+    _saveMeta();
+  }
   // 업적
   final Set<String> achieved = {};
   final List<String> pendingAch = []; // 이번 사망에서 새로 달성한 것
@@ -477,8 +558,8 @@ class World {
   int pendingStage = 1; // 메뉴에서 고르는 '이동 목표' 스테이지(선택 후 버튼으로 확정)
   double _stageT = 15; // 자동 상승 타이머(초반 빠름 → 점점 길어짐)
 
-  // 스테이지별 난이도 — 간극을 낮춰(0.07) 급상승 방지. 스테이지는 빠르게 오르되 한 칸의 체감은 완만.
-  double diffForStage(int s) => (0.78 + (s - 1) * 0.07).clamp(0.6, 3.0).toDouble();
+  // 스테이지별 난이도 — 전체적으로 더 완만하게 하향 조정(너무 높다는 피드백). 간극도 작게.
+  double diffForStage(int s) => (0.62 + (s - 1) * 0.055).clamp(0.5, 2.4).toDouble();
   void _applyStageDiff() => diff = diffForStage(stage);
   // 다음 스테이지까지 시간 — 초반은 짧게(빠른 진행감), 갈수록 길어짐
   double _stageDuration(int s) => (13.0 + s * 2.2).clamp(13.0, 38.0).toDouble();
@@ -549,10 +630,11 @@ class World {
     }
   }
 
-  // 메뉴에서 고른 스테이지로 '이동' 후 재개 (포기하고 마치기 대체)
-  void travelToStage() {
-    setStage(pendingStage);
-    hp = min(maxHp, hp + maxHp * 0.15); // 사냥터 이동 시 약간의 숨 고르기
+  // 메뉴에서 STAGE 버튼으로 '이동' 후 재개 (포기하고 마치기 대체)
+  void travelToStage(int s) {
+    setStage(s);
+    pendingStage = stage;
+    hp = min(maxHp, hp + maxHp * 0.12); // 사냥터 이동 시 약간의 숨 고르기
     if (phase == GPhase.menu) phase = GPhase.playing;
   }
 
@@ -651,22 +733,29 @@ class World {
   }
 
   // ── 파생 스탯 (캐릭터 배수 + 광폭화 + 영구 강화(meta) 반영) ──
-  double get maxHp => (baseMaxHp + 25 * hideLv + 15 * metaLv('hp')) * charHp;
+  double get maxHp => (baseMaxHp + 25 * hideLv + 15 * metaLv('hp') + gearStat('hp')) * charHp;
   double get speed =>
-      baseSpeed * (1 + 0.10 * windLv + 0.04 * metaLv('spd')) * charSpeed * (berserkT > 0 ? 1.18 : 1.0);
-  double get pickupRange => 58 + 16.0 * hungerLv + 8 * metaLv('pick') + (sp('magnet') ? 80 : 0);
+      baseSpeed *
+      (1 + 0.10 * windLv + 0.04 * metaLv('spd') + 0.01 * gearStat('spd')) *
+      charSpeed *
+      (berserkT > 0 ? 1.18 : 1.0);
+  double get pickupRange =>
+      58 + 16.0 * hungerLv + 8 * metaLv('pick') + gearStat('pick') + (sp('magnet') ? 80 : 0);
   double get dmgMult =>
-      (1 + 0.12 * wildLv + 0.05 * metaLv('atk')) *
+      (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + 0.01 * gearStat('dmg')) *
       charDmg *
       (berserkT > 0 ? 1.35 : 1.0) *
       (sp('fury') ? 1.25 : 1.0);
-  double get fireMult => (1 + 0.10 * rageLv) * (berserkT > 0 ? 1.6 : 1.0) * (sp('haste') ? 1.3 : 1.0);
+  double get fireMult =>
+      (1 + 0.10 * rageLv + 0.01 * gearStat('as')) * (berserkT > 0 ? 1.6 : 1.0) * (sp('haste') ? 1.3 : 1.0);
   double get armorMult => sp('armor') ? 0.78 : 1.0; // 받는 피해 배수
+  // 경험치 배수 — 스테이지가 높을수록 구슬이 더 많은 XP(높은 난이도 보상·빠른 성장)
+  double get xpMult => 1.0 + (stage - 1) * 0.2;
   bool get rageReady => rage >= rageMax;
 
   void toggleMute() => sfx.muted = !sfx.muted;
 
-  void startGame() {
+  void startGame({int? atStage}) {
     sfx.init(); // 사용자 탭(시작 버튼) 직후 → 오디오 정책 통과
     phase = GPhase.playing;
     time = 0;
@@ -728,9 +817,10 @@ class World {
     _heraldCd = 0;
     _lowCd = 0;
     _streakKillMark = 0;
-    stage = 1;
-    pendingStage = 1;
-    _stageT = _stageDuration(1);
+    stage = (atStage ?? startStage).clamp(1, maxStage); // 선택한 시작 스테이지에서 출발
+    pendingStage = stage;
+    startStage = stage;
+    _stageT = _stageDuration(stage);
     _applyStageDiff();
     jActive = false;
     dirx = diry = 0;
@@ -804,8 +894,12 @@ class World {
     if (petHappyT > 0) petHappyT = max(0, petHappyT - dt);
     if (petLineT > 0) petLineT -= dt;
     if (_petSayCd > 0) _petSayCd -= dt;
-    // 재생 특별스킬 — 매초 최대체력의 1.2% 회복
-    if (sp('regen') && hp < maxHp) hp = min(maxHp, hp + maxHp * 0.012 * dt);
+    // 재생 — 특별스킬(최대체력 1.2%/s) + 장비 regen(고정/s)
+    if (hp < maxHp) {
+      double rps = sp('regen') ? maxHp * 0.012 : 0;
+      rps += gearStat('regen');
+      if (rps > 0) hp = min(maxHp, hp + rps * dt);
+    }
     final moving0 = dirx != 0 || diry != 0;
     final tpx = moving0 ? px - dirx * 28 : px - 22;
     final tpy = moving0 ? py - diry * 28 : py - 24;
@@ -932,12 +1026,13 @@ class World {
     }
     spawnT -= dt;
     if (spawnT > 0) return;
-    final interval = max(0.5, 2.0 - time * 0.011).toDouble();
+    // 스폰 완화 — 간격 살짝 늘리고 동시 수 증가도 더 천천히(난이도 하향)
+    final interval = max(0.6, 2.2 - time * 0.010).toDouble();
     spawnT = interval;
-    if (enemies.length > 120) return;
-    final count = 1 + (time ~/ 48);
+    if (enemies.length > 110) return;
+    final count = 1 + (time ~/ 56);
     for (int i = 0; i < count; i++) {
-      if (enemies.length > 120) break;
+      if (enemies.length > 110) break;
       _spawnOne();
     }
   }
@@ -975,24 +1070,25 @@ class World {
     } else if (stage >= 2 && roll < 0.80) {
       t = EType.swarm; // 떼거리
     }
-    final base = (9 + time * 0.5) * diff;
+    // 적 체력·피해 전반 하향(너무 높다는 피드백) — base 계수↓ + 접촉피해 계수↓
+    final base = (8 + time * 0.42) * diff;
     Enemy e;
     if (t == EType.fast) {
-      e = Enemy(_eid++, x, y, base * 0.65, base * 0.65, 72 + time * 0.17, (4 + time * 0.03) * diff, 9, t);
+      e = Enemy(_eid++, x, y, base * 0.62, base * 0.62, 72 + time * 0.17, (3.2 + time * 0.024) * diff, 9, t);
     } else if (t == EType.swarm) {
-      e = Enemy(_eid++, x, y, base * 0.4, base * 0.4, 90 + time * 0.2, (3 + time * 0.02) * diff, 7, t);
+      e = Enemy(_eid++, x, y, base * 0.4, base * 0.4, 90 + time * 0.2, (2.4 + time * 0.016) * diff, 7, t);
     } else if (t == EType.tank) {
-      e = Enemy(_eid++, x, y, base * 3.0, base * 3.0, 30 + time * 0.05, (8.5 + time * 0.05) * diff, 18, t);
+      e = Enemy(_eid++, x, y, base * 2.8, base * 2.8, 30 + time * 0.05, (7 + time * 0.04) * diff, 18, t);
     } else if (t == EType.splitter) {
-      e = Enemy(_eid++, x, y, base * 1.3, base * 1.3, 40 + time * 0.08, (5 + time * 0.03) * diff, 14, t);
+      e = Enemy(_eid++, x, y, base * 1.25, base * 1.25, 40 + time * 0.08, (4 + time * 0.024) * diff, 14, t);
     } else if (t == EType.bomber) {
-      e = Enemy(_eid++, x, y, base * 0.9, base * 0.9, 54 + time * 0.12, (4 + time * 0.02) * diff, 13, t);
+      e = Enemy(_eid++, x, y, base * 0.85, base * 0.85, 54 + time * 0.12, (3.2 + time * 0.016) * diff, 13, t);
     } else if (t == EType.shooter) {
-      final se = Enemy(_eid++, x, y, base * 0.8, base * 0.8, 26 + time * 0.05, (4 + time * 0.02) * diff, 11, t);
+      final se = Enemy(_eid++, x, y, base * 0.75, base * 0.75, 26 + time * 0.05, (3.2 + time * 0.016) * diff, 11, t);
       se.atkT = 0.8 + rng.nextDouble() * 1.6; // 첫 사격 분산
       e = se;
     } else {
-      e = Enemy(_eid++, x, y, base, base, 44 + time * 0.12, (4.5 + time * 0.03) * diff, 11, t);
+      e = Enemy(_eid++, x, y, base, base, 44 + time * 0.12, (3.6 + time * 0.024) * diff, 11, t);
     }
     enemies.add(e);
   }
@@ -1238,7 +1334,7 @@ class World {
         gained += o.value;
         parts.add(Particle(o.x, o.y, (px - o.x) * 2, (py - o.y) * 2, 0.25, 2, P.cyan));
       }
-      xp += gained * diff * (sp('magnet') ? 1.3 : 1.0);
+      xp += gained * xpMult * (sp('magnet') ? 1.3 : 1.0);
       orbs.clear();
       _float(px, py - 28, '🧲 전부 흡수!', P.cyan, 16);
       pulses.add(Pulse(px, py, 160, 0.4, P.cyan));
@@ -1261,6 +1357,34 @@ class World {
       pulses.add(Pulse(px, py, 110, 0.4, P.green));
       sfx.play('pick');
     }
+  }
+
+  // 보스 전리품 — 미보유 장비 중 1개를 확률 드랍(루트 감성). 낮은 레어도일수록 잘 나옴.
+  void _dropGearLoot() {
+    final pool = kGear.where((g) => !ownedGear.contains(g.id)).toList();
+    if (pool.isEmpty) return;
+    if (rng.nextDouble() > 0.6) return; // 60%만 드랍
+    final weights = <double>[];
+    double tot = 0;
+    for (final g in pool) {
+      final wgt = 1.0 / (1 + g.rarity * 1.6);
+      weights.add(wgt);
+      tot += wgt;
+    }
+    double r = rng.nextDouble() * tot;
+    Gear pick = pool.first;
+    for (int i = 0; i < pool.length; i++) {
+      r -= weights[i];
+      if (r <= 0) {
+        pick = pool[i];
+        break;
+      }
+    }
+    ownedGear.add(pick.id);
+    equipped[pick.slot] ??= pick.id;
+    _saveMeta();
+    _float(px, py - 42, '전리품! ${pick.name}', kRarityCol[pick.rarity], 16);
+    _say('전리품입니다, 대장님 — ${pick.name}! 장비창에서 확인하시죠.', force: true, face: '🎁');
   }
 
   // ── 충돌 ──
@@ -1379,6 +1503,7 @@ class World {
           _say(_pick(Tiny.boss), force: true, face: '😼');
           _shakeAdd(10);
           _hapticBig = true;
+          _dropGearLoot(); // 보스 전리품 → 장비 루트(미보유 중 1개) 획득 가능
         }
         final drops = e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1);
         for (int i = 0; i < drops; i++) {
@@ -1431,7 +1556,7 @@ class World {
           o.y += dy / d * pull * dt;
         }
         if (d < 16) {
-          xp += o.value * diff * (sp('magnet') ? 1.3 : 1.0); // 난이도·자성 보정
+          xp += o.value * xpMult * (sp('magnet') ? 1.3 : 1.0); // 스테이지↑일수록 XP↑ · 자성 보정
           o.dead = true;
           sfx.play('pick', gapMs: 35);
         }
@@ -1603,6 +1728,9 @@ class World {
     maxStage = 1;
     bestTime = 0;
     bestKills = 0;
+    ownedGear.clear();
+    equipped.clear();
+    startStage = 1;
     _loadRecords();
     _loadMeta();
     _checkDaily();
@@ -1668,11 +1796,21 @@ class World {
       skin = j['skin'] as String? ?? 'default';
       lastDaily = j['daily'] as String? ?? '';
       maxStage = (j['maxst'] as int?) ?? 1;
+      ownedGear.addAll(((j['gear'] as List?) ?? []).map((e) => e as String));
+      final eq = (j['equip'] as Map?) ?? {};
+      eq.forEach((k, v) {
+        final si = int.tryParse(k.toString());
+        if (si != null && si >= 0 && si < GearSlot.values.length && v is String) {
+          equipped[GearSlot.values[si]] = v;
+        }
+      });
     } catch (_) {}
   }
 
   void _saveMeta() {
     try {
+      final eq = <String, String>{};
+      equipped.forEach((k, v) => eq[k.index.toString()] = v);
       html.window.localStorage[_metaKey] = jsonEncode({
         'fangs': fangs,
         'up': meta,
@@ -1681,6 +1819,8 @@ class World {
         'skin': skin,
         'daily': lastDaily,
         'maxst': maxStage,
+        'gear': ownedGear.toList(),
+        'equip': eq,
       });
     } catch (_) {}
   }
@@ -1788,6 +1928,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.shop) _shopOverlay(),
             if (world.phase == GPhase.achieve) _achieveOverlay(),
             if (world.phase == GPhase.skins) _skinsOverlay(),
+            if (world.phase == GPhase.status) _statusOverlay(),
             if (world.phase == GPhase.menu) _menuOverlay(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.dead) _death(),
@@ -1936,66 +2077,74 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         const SizedBox(height: 4),
         const Text('부르셨습니까, 대장님?', style: TextStyle(color: P.muted, fontSize: 12)),
         const SizedBox(height: 16),
+        // 간략 현황 (읽기 전용)
         Container(
           width: 300,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: P.panel,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: world.threatColor.withOpacity(0.7)),
           ),
-          child: Column(children: [
-            // 사냥터(스테이지) 선택 — ±로 고른 뒤, 아래 '이동' 버튼으로 확정해 들어간다.
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('사냥터 선택', style: TextStyle(color: P.muted, fontSize: 12)),
-              Row(children: [
-                _stageBtn('−', world.pendingStage > 1,
-                    () => setState(() => world.pendingStage = (world.pendingStage - 1).clamp(1, world.maxStage))),
-                const SizedBox(width: 10),
-                Text('STAGE ${world.pendingStage}',
-                    style: TextStyle(
-                        color: world.diffForStage(world.pendingStage) < 1.15
-                            ? P.green
-                            : (world.diffForStage(world.pendingStage) < 1.7 ? P.gold : P.red),
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold)),
-                const SizedBox(width: 10),
-                _stageBtn('＋', world.pendingStage < world.maxStage,
-                    () => setState(() => world.pendingStage = (world.pendingStage + 1).clamp(1, world.maxStage))),
-              ]),
-            ]),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text('현재 STAGE ${world.stage} · 최고 STAGE ${world.maxStage}까지 이동 가능',
-                  style: const TextStyle(color: P.muted, fontSize: 10)),
-            ),
-            const SizedBox(height: 6),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('적 강함 (보상도 비례↑)', style: TextStyle(color: P.muted, fontSize: 12)),
-              Text('×${world.diffForStage(world.pendingStage).toStringAsFixed(2)}',
-                  style: TextStyle(color: world.threatColor, fontSize: 14, fontWeight: FontWeight.bold)),
-            ]),
-            const SizedBox(height: 6),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('생존 · 처치', style: TextStyle(color: P.muted, fontSize: 12)),
-              Text('${World.mmss(world.time)} · ${world.kills}',
-                  style: const TextStyle(color: P.parch, fontSize: 13, fontWeight: FontWeight.bold)),
-            ]),
+          child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+            _miniStat('STAGE', '${world.stage}', world.threatColor),
+            _miniStat('적 강함', '×${world.diff.toStringAsFixed(2)}', world.threatColor),
+            _miniStat('생존', World.mmss(world.time), P.parch),
+            _miniStat('처치', '${world.kills}', P.red),
           ]),
         ),
-        const SizedBox(height: 12),
-        _statusPanel(),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
+        // 사냥터 이동 — 버튼(STAGE 칩)을 눌러서만 선택·이동
+        Container(
+          width: 300,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: P.panel,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: P.line),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('🗺  사냥터 이동  (탭하면 이동)',
+                style: TextStyle(color: P.goldSoft, fontSize: 12.5, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: List.generate(world.maxStage, (i) {
+                final n = i + 1;
+                final cur = n == world.stage;
+                return GestureDetector(
+                  onTap: () => setState(() => world.travelToStage(n)),
+                  child: Container(
+                    width: 40,
+                    height: 34,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: cur ? P.gold : Colors.black.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: cur ? P.gold : P.line),
+                    ),
+                    child: Text('$n',
+                        style: TextStyle(
+                            color: cur ? Colors.black : P.parch,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 4),
+            Text(world.maxStage <= 1 ? '더 오래 버티면 새 사냥터가 열립니다' : '낮추면 수월 · 올리면 보상(XP·전리품)↑',
+                style: const TextStyle(color: P.muted, fontSize: 10)),
+          ]),
+        ),
+        const SizedBox(height: 14),
         _bigBtn('▶  이어하기', P.gold, () => setState(() => world.resume())),
         const SizedBox(height: 10),
-        // 포기 대신 '사냥터 이동' — 선택한 STAGE로 옮겨 다시 사냥(낮추면 수월, 올리면 보상↑)
-        _bigBtn(
-            world.pendingStage == world.stage
-                ? '🐾  STAGE ${world.pendingStage} 유지'
-                : '🐾  STAGE ${world.pendingStage} (으)로 이동',
-            P.cyan,
-            () => setState(() => world.travelToStage())),
+        _bigBtn('📊  상태 · 장비', P.panel, () => setState(() {
+              world.statusReturn = GPhase.menu;
+              world.phase = GPhase.status;
+            }), dark: false),
         const SizedBox(height: 10),
         _bigBtn('🦷  전리품 상점', P.panel, () => setState(() {
               world.shopReturn = GPhase.menu;
@@ -2009,6 +2158,15 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       ),
     );
   }
+
+  Widget _miniStat(String label, String val, Color c) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: const TextStyle(color: P.muted, fontSize: 10)),
+          const SizedBox(height: 2),
+          Text(val, style: TextStyle(color: c, fontSize: 15, fontWeight: FontWeight.bold)),
+        ],
+      );
 
   // ── 어흥! 광기 궁극기 버튼 (우하단) ──
   Widget _rageButton() {
@@ -2245,9 +2403,17 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           if (world.bestTime > 0)
             Text('최고 기록 ${World.mmss(world.bestTime)} · ${world.bestKills}킬',
                 style: const TextStyle(color: P.muted, fontSize: 12)),
-          const SizedBox(height: 22),
-          _bigBtn('⚔  생존 시작', sel.color, () => setState(() => world.startGame())),
+          const SizedBox(height: 14),
+          _startStagePicker(),
+          const SizedBox(height: 14),
+          _bigBtn(world.maxStage > 1 ? '⚔  STAGE ${world.startStage} 생존 시작' : '⚔  생존 시작',
+              sel.color, () => setState(() => world.startGame(atStage: world.startStage))),
           const SizedBox(height: 12),
+          _bigBtn('📊  상태 · 장비', P.panel, () => setState(() {
+                world.statusReturn = GPhase.title;
+                world.phase = GPhase.status;
+              }), dark: false),
+          const SizedBox(height: 10),
           _bigBtn('🦷  전리품 상점  (보유 ${world.fangs})', P.panel, () => setState(() {
                 world.shopReturn = GPhase.title;
                 world.phase = GPhase.shop;
@@ -2464,6 +2630,154 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
+  // ── 상태 · 장비 (RPG) — 시작 스탯 미리보기 + 장비 장착/구매(대장간 겸용) ──
+  Widget _statusOverlay() {
+    final dmgP = (5 * world.metaLv('atk') + world.gearStat('dmg')).round();
+    final asP = world.gearStat('as').round();
+    final hpV = (world.baseMaxHp + 15 * world.metaLv('hp') + world.gearStat('hp')).round();
+    final spdP = (4 * world.metaLv('spd') + world.gearStat('spd')).round();
+    final pickV = (58 + 8 * world.metaLv('pick') + world.gearStat('pick')).round();
+    final regenV = world.gearStat('regen');
+    final inRun = world.statusReturn == GPhase.menu;
+    return Container(
+      color: Colors.black.withOpacity(0.86),
+      child: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
+            child: Row(children: [
+              const Text('📊 상태 · 장비',
+                  style: TextStyle(color: P.gold, fontSize: 20, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              Text('보유 🦷 ${world.fangs}',
+                  style: const TextStyle(color: P.goldSoft, fontSize: 15, fontWeight: FontWeight.bold)),
+            ]),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+              children: [
+                const Text('능력치 (영구: 강화 + 장비)',
+                    style: TextStyle(color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  _statBox('💪 공격력', '+$dmgP%'),
+                  _statBox('⚡ 공격속도', '+$asP%'),
+                  _statBox('❤ 최대체력', '$hpV'),
+                  _statBox('🌬 이동속도', '+$spdP%'),
+                  _statBox('🧲 수집범위', '$pickV'),
+                  _statBox('💗 재생', regenV > 0 ? '${regenV.toStringAsFixed(1)}/s' : '–'),
+                ]),
+                const SizedBox(height: 16),
+                const Text('🛠 장비 — 장착 시 영구 적용 (보스 전리품·대장간 구매)',
+                    style: TextStyle(color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                ...kGear.map((g) => _gearRow(g)),
+                if (inRun) ...[
+                  const SizedBox(height: 16),
+                  const Text('이번 런 빌드',
+                      style: TextStyle(color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Center(child: _statusPanel()),
+                ],
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+            child: _bigBtn('← 돌아가기', P.panel, () => setState(() => world.phase = world.statusReturn),
+                dark: false),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _statBox(String label, String val) => Container(
+        width: 102,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: P.panel,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: P.line),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: const TextStyle(color: P.muted, fontSize: 11)),
+          const SizedBox(height: 3),
+          Text(val, style: const TextStyle(color: P.goldSoft, fontSize: 15, fontWeight: FontWeight.bold)),
+        ]),
+      );
+
+  Widget _gearRow(Gear g) {
+    final owned = world.ownedGear.contains(g.id);
+    final equippedHere = world.equipped[g.slot] == g.id;
+    final rc = kRarityCol[g.rarity];
+    final canBuy = !owned && world.fangs >= g.cost;
+    final btnColor = equippedHere
+        ? const Color(0xFF2A2018)
+        : (owned ? P.green.withOpacity(0.85) : (canBuy ? P.gold : const Color(0xFF2A2018)));
+    final btnText = equippedHere ? '장착중' : (owned ? '장착' : '🦷${g.cost}');
+    final slotName = g.slot == GearSlot.weapon ? '무기' : (g.slot == GearSlot.armor ? '방어구' : '장신구');
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: equippedHere ? rc.withOpacity(0.14) : P.panel,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: equippedHere ? rc : P.line, width: equippedHere ? 2 : 1),
+        ),
+        child: Row(children: [
+          Text(g.icon, style: const TextStyle(fontSize: 22)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                      color: rc.withOpacity(0.2), borderRadius: BorderRadius.circular(5)),
+                  child: Text('${kRarityName[g.rarity]}·$slotName',
+                      style: TextStyle(color: rc, fontSize: 9, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 6),
+                Text(g.name,
+                    style: TextStyle(color: rc, fontSize: 13.5, fontWeight: FontWeight.bold)),
+              ]),
+              const SizedBox(height: 2),
+              Text(g.desc, style: const TextStyle(color: P.muted, fontSize: 11)),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 76,
+            child: Material(
+              color: btnColor,
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: equippedHere
+                    ? null
+                    : () => setState(() => owned ? world.equipGear(g.id) : world.buyGear(g.id)),
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Text(btnText,
+                      style: TextStyle(
+                          color: equippedHere
+                              ? P.muted
+                              : (owned ? Colors.black : (canBuy ? Colors.black : P.muted)),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
   // ── 업적 ──
   Widget _achieveOverlay() {
     return Container(
@@ -2608,6 +2922,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     return Container(
       color: Colors.black.withOpacity(0.78),
       alignment: Alignment.center,
+      child: SingleChildScrollView(
       padding: const EdgeInsets.all(28),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         const Text('☠️', style: TextStyle(fontSize: 60)),
@@ -2650,13 +2965,73 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ],
           ]),
         ),
-        const SizedBox(height: 20),
-        _bigBtn('🔥  다시 일어선다', P.blood, () => setState(() => world.startGame()), dark: false),
+        const SizedBox(height: 16),
+        _startStagePicker(),
+        const SizedBox(height: 16),
+        _bigBtn('🔥  STAGE ${world.startStage} 에서 다시 일어선다', P.blood,
+            () => setState(() => world.startGame(atStage: world.startStage)), dark: false),
         const SizedBox(height: 10),
         _bigBtn('🦷  전리품 상점', P.panel, () => setState(() {
               world.shopReturn = GPhase.dead;
               world.phase = GPhase.shop;
             }), dark: false),
+        const SizedBox(height: 10),
+        _bigBtn('📊  상태 · 장비', P.panel, () => setState(() {
+              world.statusReturn = GPhase.dead;
+              world.phase = GPhase.status;
+            }), dark: false),
+        const SizedBox(height: 10),
+        _bigBtn('🏠  타이틀로', P.panel, () => setState(() => world.phase = GPhase.title),
+            dark: false),
+      ]),
+      ),
+    );
+  }
+
+  // 시작 스테이지 선택기 — 사망/타이틀에서 버튼으로 시작 사냥터 고르기(도달한 최고까지)
+  Widget _startStagePicker() {
+    if (world.maxStage <= 1) return const SizedBox.shrink();
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 320),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: P.panel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: P.line),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('🗺  시작 사냥터 (탭하여 선택)',
+            style: TextStyle(color: P.goldSoft, fontSize: 12, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: List.generate(world.maxStage, (i) {
+            final n = i + 1;
+            final on = n == world.startStage;
+            return GestureDetector(
+              onTap: () => setState(() => world.startStage = n),
+              child: Container(
+                width: 38,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: on ? P.gold : Colors.black.withOpacity(0.35),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: on ? P.gold : P.line),
+                ),
+                child: Text('$n',
+                    style: TextStyle(
+                        color: on ? Colors.black : P.parch,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold)),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 4),
+        Text('STAGE↑ = 적 강함 · XP·전리품 ↑(빠른 성장)',
+            style: const TextStyle(color: P.muted, fontSize: 10)),
       ]),
     );
   }
