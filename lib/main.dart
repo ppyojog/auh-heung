@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-2';
+const String kSaveVer = 'v2026.06.13-3';
 
 void main() => runApp(const SurvivorApp());
 
@@ -408,11 +408,12 @@ class MetaUp {
 }
 
 const List<MetaUp> kMeta = [
-  MetaUp('atk', '💪', '맹수의 발톱', '시작 공격력 +5%', 30, 10),
-  MetaUp('hp', '❤', '두꺼운 가죽', '시작 체력 +15', 25, 10),
-  MetaUp('spd', '🌬', '바람의 다리', '시작 이동속도 +4%', 30, 6),
-  MetaUp('pick', '🧲', '굶주린 코', '수집 범위 +8', 25, 6),
-  MetaUp('gain', '🦷', '전리품 사냥꾼', '송곳니 획득 +12%', 40, 8),
+  MetaUp('atk', '💪', '맹수의 발톱', '시작 공격력 +5%', 30, 30),
+  MetaUp('hp', '❤', '두꺼운 가죽', '시작 체력 +15', 25, 30),
+  MetaUp('spd', '🌬', '바람의 다리', '시작 이동속도 +4%', 30, 20),
+  MetaUp('pick', '🧲', '굶주린 코', '수집 범위 +8', 25, 20),
+  MetaUp('gain', '🦷', '전리품 사냥꾼', '송곳니 획득 +12%', 40, 20),
+  MetaUp('crit', '⚡', '치명의 송곳니', '치명타 확률 +2%', 45, 20),
 ];
 
 // 업적 — 달성 시 송곳니 보상 + 영구 기록(리텐션·목표)
@@ -431,6 +432,11 @@ const List<Ach> kAch = [
   Ach('boss1', '👹', '거수 사냥꾼', '보스 처치', 30),
   Ach('dev200', '🍖', '대식가', '한 판 200 포식', 30),
   Ach('surv180', '🏆', '살아있는 전설', '3분 생존', 40),
+  Ach('stage10', '🔥', '불타는 사냥터', '스테이지 10 도달', 50),
+  Ach('lv25', '🌟', '초월한 맹수', '레벨 25 도달', 60),
+  Ach('surv300', '⌛', '불굴', '5분 생존', 70),
+  Ach('stage20', '👑', '대륙의 폭군', '스테이지 20 도달', 100),
+  Ach('kill500', '☄', '일기당천', '한 판 500킬', 90),
 ];
 
 // 코스메틱 스킨 — 호랑이 색 변경(P2W 없음, 윤리적 수익화). 송곳니로 해금.
@@ -487,7 +493,7 @@ class World {
   // 성능 진단 측정값(ms, 이동평균)
   double updMs = 0, paintMs = 0;
 
-  double get critChance => 0.12; // 크리 확률(추후 장비/메타 확장 여지)
+  double get critChance => 0.12 + 0.02 * metaLv('crit'); // 기본 12% + 메타 치명 강화
   double get comboDmg => 1.0 + (combo > 60 ? 60 : combo) * 0.004; // 콤보 공격 보너스(최대 +24%)
   // 히트스톱 발동 — 작은(크리)건 쿨다운 제한, 큰 이벤트(force)는 항상.
   void _hs(double v, {bool force = false}) {
@@ -628,8 +634,9 @@ class World {
   int pendingStage = 1; // 메뉴에서 고르는 '이동 목표' 스테이지(선택 후 버튼으로 확정)
   double _stageT = 15; // 자동 상승 타이머(초반 빠름 → 점점 길어짐)
 
-  // 스테이지별 난이도 — 전체적으로 더 완만하게 하향 조정(너무 높다는 피드백). 간극도 작게.
-  double diffForStage(int s) => (0.62 + (s - 1) * 0.055).clamp(0.5, 2.4).toDouble();
+  // 스테이지별 난이도 — '상한 없음'. 스테이지가 계속 오르므로 적도 끝없이 강해진다(장수성).
+  //  높은 스테이지 = 플레이어가 고른 난이도 = 보상도 비례↑ (VS의 Curse식 자기 난이도 조절).
+  double diffForStage(int s) => (0.7 + (s - 1) * 0.08).clamp(0.5, 99.0).toDouble();
   void _applyStageDiff() => diff = diffForStage(stage);
   // 다음 스테이지까지 시간 — 더 짧게(빠른 진행감·잦은 분위기 전환)
   double _stageDuration(int s) => (10.0 + s * 1.8).clamp(10.0, 32.0).toDouble();
@@ -923,8 +930,9 @@ class World {
       72 + 16.0 * hungerLv + 8 * metaLv('pick') + gearStat('pick') + (sp('magnet') ? 80 : 0);
   // 포식(Devour) 누적 성장 — 먹을수록(처치할수록) 연속적으로 강해진다(양→호랑이 핵심 파워).
   //  레벨/선택은 '빌드 방향', 포식은 '꾸준한 누적 파워'로 역할 분리(밸런스 스윙↓).
-  double get devourAtk => 0.0035 * devour; // 처치당 +0.35% 공격력 (연속)
-  double get devourAs => 0.0018 * devour; // 처치당 +0.18% 공속
+  // 포식 누적 — 무한 폭주 방지로 상한(공격 최대 +120%, 공속 +50%). 그 뒤는 빌드·장비·환생으로 성장.
+  double get devourAtk => (0.0025 * devour).clamp(0.0, 1.2);
+  double get devourAs => (0.0012 * devour).clamp(0.0, 0.5);
   double get dmgMult =>
       (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + 0.01 * gearStat('dmg') + 0.01 * portraitBonus('dmg') + devourAtk) *
       charDmg *
@@ -1248,7 +1256,7 @@ class World {
   void _spawn(double dt) {
     bossT -= dt;
     if (bossT <= 0) {
-      bossT = 90;
+      bossT = max(40.0, 90.0 - stage * 1.6); // 스테이지 오를수록 보스 더 자주(엔드 압박)
       _spawnBoss();
     }
     spawnT -= dt;
@@ -1297,8 +1305,8 @@ class World {
     } else if (stage >= 2 && roll < 0.80) {
       t = EType.swarm; // 떼거리
     }
-    // 적 체력 하향 — 즉사하듯 빠르게 터져 속도감↑(수가 많아도 쉽게). 스케일은 scaleT 기준.
-    final base = (6.5 + scaleT * 0.34) * diff;
+    // 적 체력 — scaleT·diff로 끝없이 증가(고스테이지일수록 탱키 → 범위기술이 즉삭 못함, 지속 긴장).
+    final base = (7 + scaleT * 0.5) * diff;
     Enemy e;
     if (t == EType.fast) {
       e = Enemy(_eid++, x, y, base * 0.62, base * 0.62, 72 + scaleT * 0.17, (3.2 + scaleT * 0.024) * diff, 9, t);
@@ -1317,8 +1325,8 @@ class World {
     } else {
       e = Enemy(_eid++, x, y, base, base, 44 + scaleT * 0.12, (3.6 + scaleT * 0.024) * diff, 11, t);
     }
-    // 엘리트(정예) — 가끔 등장. 강하지만 처치 시 확정 보상(우선 처치 타겟 = 긴장·재미).
-    if (t != EType.swarm && scaleT > 35 && rng.nextDouble() < 0.045) {
+    // 엘리트(정예) — 스테이지 오를수록 더 자주. 강하지만 처치 시 확정 보상(우선 타겟·긴장).
+    if (t != EType.swarm && scaleT > 35 && rng.nextDouble() < (0.04 + stage * 0.004).clamp(0.04, 0.2)) {
       e.elite = true;
       e.hp *= 3.2;
       e.maxHp *= 3.2;
@@ -1670,7 +1678,7 @@ class World {
     for (final e in enemies) {
       final rr = e.radius + pr;
       if ((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py) <= rr * rr) {
-        hp -= e.dmg * dt * armorMult * 0.82; // 적 수가 많아져도 쉽게 — 접촉피해 소폭↓
+        hp -= e.dmg * dt * armorMult; // 접촉 피해(고스테이지일수록 diff로 커져 위협)
         contactCdView = 0.12;
         _hapticHit = true;
         _shakeAdd(3);
@@ -1719,7 +1727,7 @@ class World {
         }
         // 분열 — 죽으면 작은 떼거리 둘로 갈라짐
         if (e.type == EType.splitter) {
-          final cb = (6.5 + scaleT * 0.34) * diff * 0.45;
+          final cb = (7 + scaleT * 0.5) * diff * 0.45;
           for (int s = 0; s < 2; s++) {
             final ang = rng.nextDouble() * 6.2831853;
             newborn.add(Enemy(_eid++, e.x + cos(ang) * 14, e.y + sin(ang) * 14, cb, cb,
@@ -2017,6 +2025,11 @@ class World {
     if (runBoss >= 1) _grantAch('boss1', 30);
     if (devour >= 200) _grantAch('dev200', 30);
     if (time >= 180) _grantAch('surv180', 40);
+    if (stage >= 10) _grantAch('stage10', 50);
+    if (level >= 25) _grantAch('lv25', 60);
+    if (time >= 300) _grantAch('surv300', 70);
+    if (stage >= 20) _grantAch('stage20', 100);
+    if (kills >= 500) _grantAch('kill500', 90);
   }
 
   // ── 세이브 슬롯 (3개) — 슬롯별 송곳니·강화·기록 분리 저장 ──
