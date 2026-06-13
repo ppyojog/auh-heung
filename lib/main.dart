@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-6';
+const String kSaveVer = 'v2026.06.13-7';
 
 void main() => runApp(const SurvivorApp());
 
@@ -2762,119 +2762,135 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ── 타이틀 ──
+  // ── 메인화면 (스크롤 없음 · 한 화면 · 시스템은 버튼으로 화면 전환) ──
   Widget _title() {
     final sel = kChars[world.charIndex.clamp(0, kChars.length - 1)];
     return Container(
-      color: Colors.black.withOpacity(0.62),
-      alignment: Alignment.center,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(height: 14),
-          // ── 히어로 메달리온 (호랑이 아바타, 숨쉬는 애니메이션) ──
-          SizedBox(
-            width: 168,
-            height: 168,
-            child: CustomPaint(painter: HeroPainter(world.titleClock)),
-          ),
-          const SizedBox(height: 6),
-          // ── 로고 ──
-          ShaderMask(
-            shaderCallback: (r) => const LinearGradient(
-              colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ).createShader(r),
-            child: const Text('어 흥',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 52,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 6,
-                    height: 1.0,
-                    shadows: [
-                      Shadow(color: Color(0xCCB7402E), blurRadius: 18),
-                      Shadow(color: Colors.black, blurRadius: 6),
-                    ])),
-          ),
-          const SizedBox(height: 2),
-          Text(sel.name,
-              style: const TextStyle(
-                  color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1)),
-          if (world.prestige > 0) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: P.purple.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: P.purple.withOpacity(0.7)),
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.black.withOpacity(0.55),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+          child: Column(children: [
+            // 상단 상태 바
+            _titleTopBar(),
+            // 중앙 히어로 + 로고 (남는 공간 차지 · 작은 화면에선 자동 축소)
+            Expanded(
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                SizedBox(
+                  width: 132,
+                  height: 132,
+                  child: CustomPaint(painter: HeroPainter(world.titleClock)),
+                ),
+                const SizedBox(height: 4),
+                ShaderMask(
+                  shaderCallback: (r) => const LinearGradient(
+                    colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ).createShader(r),
+                  child: const Text('어 흥',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 46,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 6,
+                          height: 1.0,
+                          shadows: [
+                            Shadow(color: Color(0xCCB7402E), blurRadius: 18),
+                            Shadow(color: Colors.black, blurRadius: 6),
+                          ])),
+                ),
+                const SizedBox(height: 4),
+                Text('— ${sel.name} —',
+                    style: const TextStyle(
+                        color: P.goldSoft, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                if (world.dailyJustClaimed) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0x22E8A33D),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: P.gold.withOpacity(0.6)),
+                    ),
+                    child: const Text('🎁 오늘의 보너스 +30 🦷',
+                        style: TextStyle(color: P.goldSoft, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+                  ]),
+                ),
               ),
-              child: Text('🌀 환생 ×${world.prestige}  ·  영구 +${world.prestige * 12}%',
-                  style: const TextStyle(color: P.purple, fontSize: 12, fontWeight: FontWeight.bold)),
             ),
-          ],
-          const SizedBox(height: 16),
-          // 📢 공지·이벤트 (메인 로비)
-          SizedBox(
-            width: 300,
-            child: _actBtn('📢  공지 · 이벤트', P.cyan, false,
-                () => setState(() => world.phase = GPhase.notice)),
-          ),
-          const SizedBox(height: 16),
-          // 자동 저장 단일 프로필 요약(슬롯 없음 — 자동 저장)
-          Container(
-            width: 300,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: P.panel,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: P.line),
-            ),
-            child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-              _miniStat('🦷 송곳니', '${world.fangs}', P.goldSoft),
-              _miniStat('최고 기록', world.bestTime > 0 ? World.mmss(world.bestTime) : '–', P.gold),
-              _miniStat('최고 STAGE', '${world.maxStage}', P.cyan),
-            ]),
-          ),
-          const SizedBox(height: 16),
-          _startStagePicker(),
-          const SizedBox(height: 14),
-          // 프리미엄 CTA — 발광·맥동
-          _ctaButton(world.maxStage > 1 ? '⚔  STAGE ${world.startStage}  생존 시작' : '⚔  생 존  시 작',
-              () => setState(() => world.startGame(atStage: world.startStage))),
-          const SizedBox(height: 16),
-          // 통일 허브 그리드 (단련/장비/창고/업적/무늬/설정)
-          SizedBox(width: 320, child: _hubGrid(from: GPhase.title)),
-          if (world.dailyJustClaimed) ...[
+            // 사냥터 선택(콤팩트 스테퍼) + CTA
+            if (world.maxStage > 1) _stageStepper(),
+            if (world.maxStage > 1) const SizedBox(height: 10),
+            _ctaButton(world.maxStage > 1 ? '⚔  STAGE ${world.startStage}  생존 시작' : '⚔  생 존  시 작',
+                () => setState(() => world.startGame(atStage: world.startStage))),
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0x22E8A33D),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: P.gold.withOpacity(0.6)),
-              ),
-              child: const Text('🎁 오늘의 보너스 +30 🦷 받았습니다!',
-                  style: TextStyle(color: P.goldSoft, fontSize: 12.5, fontWeight: FontWeight.bold)),
+            // 시스템 진입 (버튼 → 화면 전환). 스크롤 없이 한 화면.
+            SizedBox(width: 340, child: _hubGrid(from: GPhase.title)),
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: _confirmReset,
+              child: Text('🗑  세이브 초기화 (테스트)',
+                  style: TextStyle(
+                      color: P.muted.withOpacity(0.7),
+                      fontSize: 11,
+                      decoration: TextDecoration.underline)),
             ),
-          ],
-          const SizedBox(height: 18),
-          // [테스트] 세이브 초기화 — 자동저장이라 슬롯은 없고, 테스트용 전체 초기화만 제공
-          GestureDetector(
-            onTap: _confirmReset,
-            child: Text('🗑  세이브 초기화 (테스트)',
-                style: TextStyle(
-                    color: P.muted.withOpacity(0.8),
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    decoration: TextDecoration.underline)),
-          ),
-          const SizedBox(height: 16),
-        ]),
+          ]),
+        ),
       ),
     );
+  }
+
+  // 메인 상단 바 — 송곳니/환생/최고기록/최고스테이지 칩
+  Widget _titleTopBar() {
+    Widget chip(String t, Color c) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.35),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: c.withOpacity(0.45)),
+          ),
+          child: Text(t, style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.bold)),
+        );
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 7,
+      runSpacing: 6,
+      children: [
+        chip('🦷 ${world.fangs}', P.goldSoft),
+        if (world.prestige > 0) chip('🌀 ×${world.prestige}', P.purple),
+        chip('🏆 ${world.bestTime > 0 ? World.mmss(world.bestTime) : "–"}', P.gold),
+        chip('🌊 STAGE ${world.maxStage}', P.cyan),
+      ],
+    );
+  }
+
+  // 콤팩트 사냥터 스테퍼 (시작 STAGE ± 선택)
+  Widget _stageStepper() {
+    final dc = world.diffForStage(world.startStage);
+    final col = dc < 1.0 ? P.green : (dc < 1.7 ? P.gold : P.red);
+    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      _stageBtn('−', world.startStage > 1,
+          () => setState(() => world.startStage = (world.startStage - 1).clamp(1, world.maxStage))),
+      const SizedBox(width: 12),
+      Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('🗺 STAGE ${world.startStage}',
+            style: TextStyle(color: col, fontSize: 16, fontWeight: FontWeight.bold)),
+        Text('적 ×${dc.toStringAsFixed(1)} · 보상↑',
+            style: const TextStyle(color: P.muted, fontSize: 9.5)),
+      ]),
+      const SizedBox(width: 12),
+      _stageBtn('＋', world.startStage < world.maxStage,
+          () => setState(() => world.startStage = (world.startStage + 1).clamp(1, world.maxStage))),
+    ]);
   }
 
   // 세이브 전체 초기화(테스트) — 현재 자동저장 프로필 삭제
@@ -4213,6 +4229,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               world.statusReturn = from;
               world.phase = GPhase.options;
             })),
+        _navTile('📢', '공지', P.cyan, () => setState(() => world.phase = GPhase.notice),
+            sub: '이벤트'),
       ],
     );
   }
@@ -4283,14 +4301,35 @@ class WorldPainter extends CustomPainter {
     _motes(canvas, lsize, th[3]);
 
     if (w.phase == GPhase.title) {
-      // 메인화면 프리미엄 배경 — 상단 큰 금빛 발광 펄스(로고 뒤) + 하단 둥지 실루엣 느낌
+      // 메인화면 프리미엄 배경 — 상단 라이팅 + 발광 펄스 + 시네마틱 비네팅
       final tc = w.titleClock;
-      final gx = lsize.width / 2, gy = lsize.height * 0.26;
+      final gx = lsize.width / 2, gy = lsize.height * 0.24;
       final pulse = 0.5 + 0.5 * sin(tc * 1.1);
-      canvas.drawCircle(Offset(gx, gy), lsize.width * (0.55 + 0.05 * pulse),
-          Paint()..color = P.gold.withOpacity(0.05 + 0.03 * pulse));
+      // 상단에서 내려오는 빛 (god-ray 느낌 — 위가 밝고 아래로 감쇠)
+      canvas.drawRect(
+          Offset.zero & lsize,
+          Paint()
+            ..shader = LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [P.gold.withOpacity(0.10), Colors.transparent, Colors.transparent],
+              stops: const [0.0, 0.45, 1.0],
+            ).createShader(Offset.zero & lsize));
+      // 로고 뒤 큰 발광 펄스
+      canvas.drawCircle(Offset(gx, gy), lsize.width * (0.5 + 0.05 * pulse),
+          Paint()..color = P.gold.withOpacity(0.06 + 0.03 * pulse));
       canvas.drawCircle(
-          Offset(gx, gy), lsize.width * 0.34, Paint()..color = P.gold.withOpacity(0.06));
+          Offset(gx, gy), lsize.width * 0.30, Paint()..color = P.gold.withOpacity(0.07));
+      // 시네마틱 비네팅 (가장자리 어둡게 — 깊이감)
+      canvas.drawRect(
+          Offset.zero & lsize,
+          Paint()
+            ..shader = RadialGradient(
+              center: Alignment.center,
+              radius: 0.95,
+              colors: [Colors.transparent, Colors.transparent, Colors.black.withOpacity(0.55)],
+              stops: const [0.0, 0.55, 1.0],
+            ).createShader(Offset.zero & lsize));
       canvas.restore();
       return;
     }
