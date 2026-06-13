@@ -4586,7 +4586,11 @@ class WorldPainter extends CustomPainter {
     final key = '$s|${size.round()}|${col.value}';
     var tp = _floatCache[key];
     if (tp == null) {
-      if (_floatCache.length > 800) _floatCache.clear(); // 폭증 방지(스테이지 전환 등)
+      // 폭증 방지: 전체 clear()는 '주기적 대량 재레이아웃 버스트(1~3초 렉)'를 유발하므로
+      // 가장 오래된 항목 1개만 제거(삽입순서 유지되는 Map) → 균일 교체, 스파이크 없음.
+      while (_floatCache.length > 500) {
+        _floatCache.remove(_floatCache.keys.first);
+      }
       tp = TextPainter(
         text: TextSpan(
           text: s,
@@ -4691,6 +4695,7 @@ class WorldPainter extends CustomPainter {
         ..color = P.green.withOpacity(0.9)
         ..strokeWidth = 1.5
         ..strokeCap = StrokeCap.round;
+      final glint = Paint()..color = Colors.white.withOpacity(0.8 * rise); // rise는 지대당 상수 → 1회 생성
       for (int i = 0; i < cnt; i++) {
         final ang = i * 2.39996;
         final dist = s.radius * sqrt((i * 0.618034) % 1.0);
@@ -4705,46 +4710,38 @@ class WorldPainter extends CustomPainter {
           ..close();
         canvas.drawPath(tri, body);
         canvas.drawLine(Offset(px, by - h), Offset(px - w0, by), edge); // 밝은 면
-        canvas.drawCircle(Offset(px, by - h), 1.6, Paint()..color = Colors.white.withOpacity(0.8 * rise)); // 끝 글린트
+        canvas.drawCircle(Offset(px, by - h), 1.6, glint); // 끝 글린트
       }
     }
 
-    // 포효/펄스 (발광 링)
+    // 포효/펄스 (발광 링) — Paint 2개 재사용
+    final pulseOuter = Paint()..style = PaintingStyle.stroke;
+    final pulseInner = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
     for (final p in w.pulses) {
       final a = (p.life / p.maxLife).clamp(0.0, 1.0);
-      canvas.drawCircle(
-          Offset(p.x, p.y),
-          p.r,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 7 * a + 2
-            ..color = p.color.withOpacity(0.18 * a));
-      canvas.drawCircle(
-          Offset(p.x, p.y),
-          p.r,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.5
-            ..color = p.color.withOpacity(0.6 * a));
+      pulseOuter
+        ..strokeWidth = 7 * a + 2
+        ..color = p.color.withOpacity(0.18 * a);
+      canvas.drawCircle(Offset(p.x, p.y), p.r, pulseOuter);
+      pulseInner.color = p.color.withOpacity(0.6 * a);
+      canvas.drawCircle(Offset(p.x, p.y), p.r, pulseInner);
     }
 
-    // 벼락 (연쇄 선)
+    // 벼락 (연쇄 선) — Paint 2개 재사용
+    final lineGlow = Paint()
+      ..strokeWidth = 6
+      ..strokeCap = StrokeCap.round;
+    final lineCore = Paint()
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
     for (final l in w.lines) {
       final a = (l.life / l.maxLife).clamp(0.0, 1.0);
-      canvas.drawLine(
-          Offset(l.x1, l.y1),
-          Offset(l.x2, l.y2),
-          Paint()
-            ..strokeWidth = 6
-            ..strokeCap = StrokeCap.round
-            ..color = l.color.withOpacity(0.18 * a));
-      canvas.drawLine(
-          Offset(l.x1, l.y1),
-          Offset(l.x2, l.y2),
-          Paint()
-            ..strokeWidth = 2
-            ..strokeCap = StrokeCap.round
-            ..color = l.color.withOpacity(0.95 * a));
+      lineGlow.color = l.color.withOpacity(0.18 * a);
+      canvas.drawLine(Offset(l.x1, l.y1), Offset(l.x2, l.y2), lineGlow);
+      lineCore.color = l.color.withOpacity(0.95 * a);
+      canvas.drawLine(Offset(l.x1, l.y1), Offset(l.x2, l.y2), lineCore);
     }
 
     // 적
@@ -4793,11 +4790,12 @@ class WorldPainter extends CustomPainter {
       }
     }
 
-    // 파티클 (발광 스파크) — 단일 원(성능)
+    // 파티클 (발광 스파크) — 단일 원 + Paint 1개 재사용(매 프레임 수백 개 할당 제거 → GC 압력↓)
+    final ptPaint = Paint();
     for (final pt in w.parts) {
       final a = (pt.life / pt.maxLife).clamp(0.0, 1.0);
-      canvas.drawCircle(
-          Offset(pt.x, pt.y), pt.size * a + 0.6, Paint()..color = pt.color.withOpacity(a));
+      ptPaint.color = pt.color.withOpacity(a);
+      canvas.drawCircle(Offset(pt.x, pt.y), pt.size * a + 0.6, ptPaint);
     }
 
     // 플레이어 (백호 — 네온 골드)
@@ -4872,6 +4870,12 @@ class WorldPainter extends CustomPainter {
     }
   }
 
+  // 적 렌더용 재사용 Paint(매 프레임 적 수만큼 할당하던 것 제거 → GC 압력↓)
+  static final Paint _coreP = Paint()..color = const Color(0xFF0E0A08);
+  static final Paint _ringP = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 2.4;
+  static final Paint _eyeP = Paint();
   void _enemy(Canvas canvas, Enemy e) {
     Color base;
     switch (e.type) {
@@ -4911,19 +4915,14 @@ class WorldPainter extends CustomPainter {
             Paint()..color = P.gold);
       }
     }
-    // 성능: 외곽 후광 제거. 어두운 코어 + 네온 링 + 눈만(가독성 유지)
-    canvas.drawCircle(Offset(e.x, e.y), e.radius, Paint()..color = const Color(0xFF0E0A08));
-    canvas.drawCircle(
-        Offset(e.x, e.y),
-        e.radius,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.4
-          ..color = base.withOpacity(0.95));
+    // 성능: 외곽 후광 제거. 어두운 코어 + 네온 링 + 눈만(가독성 유지). Paint 재사용(적 수×프레임 할당 제거)
+    canvas.drawCircle(Offset(e.x, e.y), e.radius, _coreP);
+    _ringP.color = base.withOpacity(0.95);
+    canvas.drawCircle(Offset(e.x, e.y), e.radius, _ringP);
     // 밝은 눈
-    final eye = Paint()..color = base;
-    canvas.drawCircle(Offset(e.x - e.radius * 0.34, e.y - e.radius * 0.08), e.radius * 0.17, eye);
-    canvas.drawCircle(Offset(e.x + e.radius * 0.34, e.y - e.radius * 0.08), e.radius * 0.17, eye);
+    _eyeP.color = base;
+    canvas.drawCircle(Offset(e.x - e.radius * 0.34, e.y - e.radius * 0.08), e.radius * 0.17, _eyeP);
+    canvas.drawCircle(Offset(e.x + e.radius * 0.34, e.y - e.radius * 0.08), e.radius * 0.17, _eyeP);
     // 피격 섬광
     if (e.flash > 0) {
       canvas.drawCircle(Offset(e.x, e.y), e.radius,
