@@ -71,6 +71,17 @@ class EBullet {
   EBullet(this.x, this.y, this.vx, this.vy, this.dmg, this.life);
 }
 
+// 바닥 파워업 픽업 — 줍는 순간 강력한 효과(순간 변수·도파민). 근거: VS 류 '바닥 아이템'.
+enum PickType { magnet, bomb, heal }
+
+class Pickup {
+  double x, y;
+  final PickType type;
+  double life; // 일정 시간 뒤 사라짐
+  bool dead = false;
+  Pickup(this.x, this.y, this.type) : life = 13.0;
+}
+
 class Bullet {
   double x, y, vx, vy, dmg, radius, life;
   int pierce;
@@ -325,7 +336,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, choice, dead, shop, menu, achieve, skins }
+enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -378,15 +389,6 @@ const List<Skin> kSkins = [
   Skin('jade', '비취 야수', '🍃', Color(0xFF7FD08A), 110),
   Skin('royal', '황금 폭군', '👑', Color(0xFFFFD54F), 160),
 ];
-
-// 타이니 선택 대화 — 난이도를 가르는 분기 (선택권은 주되 욕망으로 망할 수 있는 구조)
-class TinyChoice {
-  final String prompt, leftLabel, leftSub, rightLabel, rightSub;
-  final void Function() onLeft;
-  final void Function() onRight;
-  TinyChoice(this.prompt, this.leftLabel, this.leftSub, this.onLeft, this.rightLabel,
-      this.rightSub, this.onRight);
-}
 
 // =============================================================================
 //  월드 / 게임 상태 + 업데이트 루프
@@ -474,8 +476,6 @@ class World {
   int stage = 1, maxStage = 1; // 현재/최고 도달 스테이지(최고는 슬롯별 영구 저장)
   int pendingStage = 1; // 메뉴에서 고르는 '이동 목표' 스테이지(선택 후 버튼으로 확정)
   double _stageT = 15; // 자동 상승 타이머(초반 빠름 → 점점 길어짐)
-  TinyChoice? tinyChoice; // (구 난이도 대화 — 미사용)
-  double _choiceCd = 14, _advT = 48;
 
   // 스테이지별 난이도 — 간극을 낮춰(0.07) 급상승 방지. 스테이지는 빠르게 오르되 한 칸의 체감은 완만.
   double diffForStage(int s) => (0.78 + (s - 1) * 0.07).clamp(0.6, 3.0).toDouble();
@@ -511,6 +511,8 @@ class World {
   final List<Enemy> enemies = [];
   final List<Bullet> bullets = [];
   final List<EBullet> eBullets = []; // 원거리 적 투사체
+  final List<Pickup> pickups = []; // 바닥 파워업 픽업
+  int freePicks = 0; // 보스 전리품 상자 → 무료 강화 선택권
   final List<Orb> orbs = [];
   final List<Particle> parts = [];
   final List<Pulse> pulses = [];
@@ -556,10 +558,6 @@ class World {
 
   void resume() {
     if (phase == GPhase.menu) phase = GPhase.playing;
-  }
-
-  void giveUp() {
-    if (phase == GPhase.menu || phase == GPhase.playing) _onDeath();
   }
 
   // [치트] 내부 테스트 — +10 레벨업을 예약(각 레벨마다 스킬 선택)
@@ -697,11 +695,13 @@ class World {
     boltT = 0;
     spikeT = 0;
     spawnT = 1.4; // 첫 몇 초 숨 돌릴 여유
-    bossT = 90;
+    bossT = 60; // 첫 보스(전리품 상자)는 좀 더 일찍 → 초반 보상 스파이크
     orbitAngle = 0;
     enemies.clear();
     bullets.clear();
     eBullets.clear();
+    pickups.clear();
+    freePicks = 0;
     orbs.clear();
     parts.clear();
     pulses.clear();
@@ -758,53 +758,6 @@ class World {
     _shakeAdd(18);
     _hapticBig = true;
     sfx.play('boss');
-  }
-
-  // 적 일부 제거(후퇴 시 숨통) — 보스는 제외
-  void _thin(double frac) {
-    enemies.removeWhere((e) => e.type != EType.boss && rng.nextDouble() < frac);
-  }
-
-  void _offerRetreat() {
-    phase = GPhase.choice;
-    tinyChoice = TinyChoice(
-      '대장님, 여긴 좀 거셉니다. 2보 전진을 위한 1보 후퇴… 잠시 수월한 사냥터로 물러날까요?',
-      '🐾 잠시 물러난다', '난이도↓·체력 회복·숨통',
-      () {
-        diff = max(0.6, diff - 0.4);
-        hp = min(maxHp, hp + maxHp * 0.35);
-        _thin(0.55);
-        _say('현명하십니다. 호랑이는 물러설 때를 아는 법이죠.', force: true, face: '🐯');
-      },
-      '🔥 계속 사냥한다', '그대로 — 위험하지만 멋짐',
-      () {
-        rage = min(rageMax, rage + rageMax * 0.3);
-        _say('크하핫—! 역시 호랑이답습니다, 물러섬을 모르는 분!', force: true, face: '😼');
-      },
-    );
-  }
-
-  void _offerAdvance() {
-    phase = GPhase.choice;
-    tinyChoice = TinyChoice(
-      '대장님껜 이 잡것들이 시시하시죠? 더 사나운 놈들의 둥지로 쳐들어가 볼까요?',
-      '🐅 더 사나운 곳으로', '성장↑·위험↑ (방심하면 한 입)',
-      () {
-        diff = min(2.2, diff + 0.45);
-        _say('이래야 사냥할 맛이 나죠! 단— 방심하면 한 입에 끝납니다.', force: true, face: '😼');
-      },
-      '🌿 천천히 간다', '변동 없음 — 신중',
-      () => _say('신중함도 맹수의 덕목이죠.', force: true, face: '🐯'),
-    );
-  }
-
-  void pickChoice(bool right) {
-    final c = tinyChoice;
-    if (c == null) return;
-    (right ? c.onRight : c.onLeft)();
-    tinyChoice = null;
-    _choiceCd = 32;
-    phase = GPhase.playing;
   }
 
   // ── 입력 ──
@@ -915,6 +868,7 @@ class World {
     _updateEnemies(dt);
     _collide(dt);
     _updateEBullets(dt);
+    _updatePickups(dt);
     _updateOrbs(dt);
     _updateFx(dt);
 
@@ -955,6 +909,17 @@ class World {
       } else {
         _openLevelUp();
       }
+      return;
+    }
+    // 보스 전리품 상자 → 무료 강화 선택(레벨업과 같은 화면 재사용, 도파민 스파이크)
+    if (freePicks > 0 && phase == GPhase.playing) {
+      freePicks -= 1;
+      _hapticBig = true;
+      _shakeAdd(6);
+      pulses.add(Pulse(px, py, 130, 0.5, P.gold));
+      sfx.play('level');
+      _say('전리품 상자! 원하는 힘을 고르십시오, 대장님!', force: true, face: '🎁');
+      _openLevelUp();
     }
   }
 
@@ -1237,6 +1202,67 @@ class World {
     eBullets.removeWhere((b) => b.dead);
   }
 
+  // 바닥 파워업 — 가까우면 끌려오고, 닿으면 발동(자석/폭탄/회복)
+  void _updatePickups(double dt) {
+    final grab = pr + 16;
+    for (final pk in pickups) {
+      pk.life -= dt;
+      if (pk.life <= 0) {
+        pk.dead = true;
+        continue;
+      }
+      final dx = px - pk.x, dy = py - pk.y;
+      final d2 = dx * dx + dy * dy;
+      if (d2 < 150 * 150) {
+        final d = sqrt(d2);
+        if (d > 0.1) {
+          final pull = 90 + (150 - d) * 2;
+          pk.x += dx / d * pull * dt;
+          pk.y += dy / d * pull * dt;
+        }
+      }
+      if (d2 < grab * grab) {
+        pk.dead = true;
+        _collectPickup(pk.type);
+      }
+    }
+    pickups.removeWhere((p) => p.dead);
+  }
+
+  void _collectPickup(PickType t) {
+    _hapticBig = true;
+    if (t == PickType.magnet) {
+      // 화면의 모든 구슬 즉시 흡수 (젬 폭발 = 도파민)
+      double gained = 0;
+      for (final o in orbs) {
+        gained += o.value;
+        parts.add(Particle(o.x, o.y, (px - o.x) * 2, (py - o.y) * 2, 0.25, 2, P.cyan));
+      }
+      xp += gained * diff * (sp('magnet') ? 1.3 : 1.0);
+      orbs.clear();
+      _float(px, py - 28, '🧲 전부 흡수!', P.cyan, 16);
+      pulses.add(Pulse(px, py, 160, 0.4, P.cyan));
+      sfx.play('pick');
+    } else if (t == PickType.bomb) {
+      // 화면 전체 폭발 (약한 적 청소)
+      final dmg = 50 + level * 9.0;
+      for (final e in enemies) {
+        _hurt(e, dmg);
+      }
+      pulses.add(Pulse(px, py, max(w, h), 0.5, P.red));
+      pulses.add(Pulse(px, py, max(w, h) * 0.55, 0.4, const Color(0xFFE8702E)));
+      _float(px, py - 28, '💥 폭발!', P.red, 18);
+      _shakeAdd(12);
+      sfx.play('boss');
+    } else {
+      // 회복
+      hp = min(maxHp, hp + maxHp * 0.32);
+      _float(px, py - 28, '❤ 회복!', P.green, 16);
+      pulses.add(Pulse(px, py, 110, 0.4, P.green));
+      sfx.play('pick');
+    }
+  }
+
   // ── 충돌 ──
   void _collide(double dt) {
     // 투사체 vs 적
@@ -1347,7 +1373,8 @@ class World {
         rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)) * diff);
         if (e.type == EType.boss) {
           runBoss += 1;
-          _float(e.x, e.y - e.radius, 'BOSS 격파!', P.gold, 18);
+          freePicks += 1; // 전리품 상자 → 무료 강화 선택
+          _float(e.x, e.y - e.radius, 'BOSS 격파! 🎁', P.gold, 18);
           _petSay('해냈다!');
           _say(_pick(Tiny.boss), force: true, face: '😼');
           _shakeAdd(10);
@@ -1357,6 +1384,13 @@ class World {
         for (int i = 0; i < drops; i++) {
           orbs.add(Orb(e.x + (rng.nextDouble() - 0.5) * 24, e.y + (rng.nextDouble() - 0.5) * 24,
               e.type == EType.boss ? 4.0 : 1.0));
+        }
+        // 바닥 파워업 가끔 드랍(탱크·분열은 확률↑) — 순간 변수·도파민
+        final pdrop = e.type == EType.boss
+            ? 0.0
+            : (e.type == EType.tank ? 0.16 : (e.type == EType.splitter ? 0.06 : 0.022));
+        if (pickups.length < 6 && rng.nextDouble() < pdrop) {
+          pickups.add(Pickup(e.x, e.y, PickType.values[rng.nextInt(PickType.values.length)]));
         }
         final col = e.type == EType.fast
             ? P.purple
@@ -1746,7 +1780,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ),
             if (world.phase == GPhase.playing ||
                 world.phase == GPhase.levelup ||
-                world.phase == GPhase.choice ||
                 world.phase == GPhase.menu) _hud(),
             if (world.phase == GPhase.playing) _rageButton(),
             if (world.phase == GPhase.playing) _tinyCallButton(),
@@ -1757,7 +1790,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.skins) _skinsOverlay(),
             if (world.phase == GPhase.menu) _menuOverlay(),
             if (world.phase == GPhase.levelup) _levelUp(),
-            if (world.phase == GPhase.choice && world.tinyChoice != null) _choiceOverlay(),
             if (world.phase == GPhase.dead) _death(),
             // (음소거는 타이니 메뉴로 이동)
           ]);
@@ -2539,55 +2571,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   }
 
   // ── 타이니 난이도 선택 대화 ──
-  Widget _choiceOverlay() {
-    final c = world.tinyChoice!;
-    return Container(
-      color: Colors.black.withOpacity(0.78),
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(22),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('🐯 타이니',
-            style: TextStyle(color: P.gold, fontSize: 16, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Text(c.prompt,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: P.parch, fontSize: 15, height: 1.6)),
-        ),
-        const SizedBox(height: 20),
-        _choiceCard(c.leftLabel, c.leftSub, P.cyan, () => setState(() => world.pickChoice(false))),
-        const SizedBox(height: 12),
-        _choiceCard(c.rightLabel, c.rightSub, P.blood, () => setState(() => world.pickChoice(true))),
-      ]),
-    );
-  }
-
-  Widget _choiceCard(String label, String sub, Color color, VoidCallback onTap) {
-    return Material(
-      color: P.panel,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Container(
-          width: 320,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: color.withOpacity(0.8), width: 1.5),
-          ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label,
-                style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 3),
-            Text(sub, style: const TextStyle(color: P.muted, fontSize: 12)),
-          ]),
-        ),
-      ),
-    );
-  }
-
   Widget _upgradeCard(Upgrade u) {
     return Material(
       color: P.panel,
@@ -2771,6 +2754,18 @@ class WorldPainter extends CustomPainter {
   final World w;
   WorldPainter(this.w);
 
+  // 스테이지 배경 테마 — 3스테이지마다 분위기 전환(반복 맵의 단조로움 해소, 근거: 장르 지루함 1순위).
+  //  [내부색, 외곽색, 그리드색, 부유 모트색] · 코드 전용.
+  static const List<List<Color>> _themes = [
+    [Color(0xFF15110C), Color(0xFF070605), Color(0x12E8A33D), Color(0x1FE8A33D)], // 둥지(황혼 황금)
+    [Color(0xFF1A0D0B), Color(0xFF0A0504), Color(0x12E5604E), Color(0x1FE5604E)], // 핏빛 전장
+    [Color(0xFF0D1018), Color(0xFF05070A), Color(0x125FD0E0), Color(0x1F5FD0E0)], // 시린 한밤
+    [Color(0xFF120A1A), Color(0xFF070409), Color(0x12B07CE0), Color(0x1FB07CE0)], // 보라 의회
+    [Color(0xFF0A1410), Color(0xFF050806), Color(0x127FD08A), Color(0x1F7FD08A)], // 비취 심림
+  ];
+
+  int get _ti => (((w.stage - 1) ~/ 3) % _themes.length).clamp(0, _themes.length - 1);
+
   // 발광 점: 큰 후광 → 작은 후광 → 밝은 코어 (HTML 렌더러 호환, maskFilter 미사용)
   void _glow(Canvas c, double x, double y, double r, Color col, {double core = 1.0}) {
     c.drawCircle(Offset(x, y), r * 2.6, Paint()..color = col.withOpacity(0.09));
@@ -2780,14 +2775,16 @@ class WorldPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 배경(흔들림 영향 X)
+    // 배경(흔들림 영향 X) — 스테이지 테마별 그라데이션 + 그리드 + 부유 모트
+    final th = _themes[_ti];
     final bg = Paint()
-      ..shader = const RadialGradient(
-        colors: [Color(0xFF15110C), Color(0xFF070605)],
+      ..shader = RadialGradient(
+        colors: [th[0], th[1]],
         radius: 1.0,
       ).createShader(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, bg);
-    _grid(canvas, size);
+    _grid(canvas, size, th[2]);
+    _motes(canvas, size, th[3]);
 
     if (w.phase == GPhase.title) return;
 
@@ -2802,6 +2799,22 @@ class WorldPainter extends CustomPainter {
     // 마나 구슬
     for (final o in w.orbs) {
       _glow(canvas, o.x, o.y, 3.0, P.cyan, core: 0.95);
+    }
+
+    // 바닥 파워업 픽업 (통통 튀는 발광 + 아이콘) — 눈에 띄게
+    for (final pk in w.pickups) {
+      final col = pk.type == PickType.magnet
+          ? P.cyan
+          : (pk.type == PickType.bomb ? const Color(0xFFE8702E) : P.green);
+      final ic = pk.type == PickType.magnet ? '🧲' : (pk.type == PickType.bomb ? '💣' : '❤');
+      final pulse = 1.0 + sin(w.time * 5 + pk.x) * 0.12;
+      final blink = pk.life < 3 ? (sin(w.time * 14) * 0.4 + 0.6) : 1.0; // 사라지기 직전 깜빡임
+      _glow(canvas, pk.x, pk.y, 11.0 * pulse, col, core: 0.5 * blink);
+      final tp = TextPainter(
+        text: TextSpan(text: ic, style: TextStyle(fontSize: 18 * pulse)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(pk.x - tp.width / 2, pk.y - tp.height / 2));
     }
 
     // 포효/펄스 (발광 링)
@@ -2933,9 +2946,9 @@ class WorldPainter extends CustomPainter {
         Paint()..color = P.gold.withOpacity(w.jActive ? 0.45 : 0.22));
   }
 
-  void _grid(Canvas canvas, Size size) {
+  void _grid(Canvas canvas, Size size, Color col) {
     final g = Paint()
-      ..color = P.gold.withOpacity(0.025)
+      ..color = col
       ..strokeWidth = 1;
     const step = 48.0;
     for (double x = 0; x < size.width; x += step) {
@@ -2943,6 +2956,17 @@ class WorldPainter extends CustomPainter {
     }
     for (double y = 0; y < size.height; y += step) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), g);
+    }
+  }
+
+  // 부유 모트 — 테마색의 입자가 천천히 떠오름(살아있는 배경, 단조로움 해소). 상태 없이 time 기반.
+  void _motes(Canvas canvas, Size size, Color col) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final p = Paint()..color = col;
+    for (int i = 0; i < 18; i++) {
+      final x = (i * 71.0 + sin(w.time * 0.4 + i) * 16) % size.width;
+      final y = (i * 47.0 + w.time * (10 + (i % 4) * 6.0)) % size.height;
+      canvas.drawCircle(Offset(x, size.height - y), 1.2 + (i % 3) * 0.8, p);
     }
   }
 
