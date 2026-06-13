@@ -375,7 +375,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, travel, options, diag }
+enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, travel, options, diag, morph }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -505,7 +505,13 @@ class World {
   double get tigerProg => ((level - 1) / 13.0 + devour / 700.0).clamp(0.0, 1.0);
   // 크기는 거의 고정 — 무한정 커지지 않게(성장은 '모핑'으로 표현). 호랑이로 갈수록 아주 약간만 커짐.
   double get growScale => 1.0 + tigerProg * 0.08;
-  int _tigerMile = 0; // 변신 대사 마일스톤
+  int _tigerMile = 0; // 변신 마일스톤
+  // 호랑이 각성 컷신
+  double morphT = 0; // 컷신 남은 시간
+  double morphClock = 0; // 컷신 경과(연출용)
+  int morphStage = 0; // 1=첫 각성, 2=완전체
+  bool _morphPendingChoice = false; // 컷신 후 강화 선택 열기
+  bool _morphPendingSpecial = false; // 그 선택이 특별스킬인지
   // 특별스킬(10레벨마다 1개) — 보유 집합 + 선택중 플래그
   final Set<String> specials = {};
   bool specialChoice = false;
@@ -700,7 +706,7 @@ class World {
   void cheatLevel10() {
     if (phase != GPhase.menu && phase != GPhase.playing) return;
     cheatPending += 10;
-    hp = maxHp;
+    // 풀피 회복 제거 — 순수 레벨업과 동일하게(차이 없게). 레벨업 선택·각성 컷신도 동일 경로.
     phase = GPhase.playing; // 메뉴 닫고 → 레벨업 선택 연쇄 시작
     _say('🐞 치트! 10번 강화를 골라보십시오, 대장님!', force: true, face: '🐞');
   }
@@ -919,6 +925,11 @@ class World {
     specials.clear();
     specialChoice = false;
     _tigerMile = 0;
+    morphT = 0;
+    morphClock = 0;
+    morphStage = 0;
+    _morphPendingChoice = false;
+    _morphPendingSpecial = false;
     clawT = 0;
     roarT = 0;
     boltT = 0;
@@ -1039,6 +1050,25 @@ class World {
 
   // ── 메인 업데이트 ──
   void update(double dt) {
+    // 호랑이 각성 컷신 — 잠깐 멈추고 연출. 끝나면 (대기 중이던) 강화 선택을 연다.
+    if (phase == GPhase.morph) {
+      if (dt > 0.05) dt = 0.05;
+      morphClock += dt;
+      morphT -= dt;
+      if (morphT <= 0) {
+        if (_morphPendingChoice) {
+          _morphPendingChoice = false;
+          if (_morphPendingSpecial) {
+            _openSpecial();
+          } else {
+            _openLevelUp();
+          }
+        } else {
+          phase = GPhase.playing;
+        }
+      }
+      return;
+    }
     if (phase != GPhase.playing) return;
     if (w <= 0 || h <= 0) return;
     if (dt > 0.05) dt = 0.05;
@@ -1157,18 +1187,22 @@ class World {
       sfx.play('level');
       pulses.add(Pulse(px, py, 120, 0.5, P.gold));
       _flash(P.gold, 0.35);
-      // 양→호랑이 변신 마일스톤 대사 (USP)
+      final wantSpecial = level % 10 == 0 && specials.length < kSpecials.length;
+      // 양→호랑이 각성 컷신 (레벨 기준 → 치트·자연 레벨업 동일). 끝나면 강화 선택 이어짐.
+      int? morphTo;
       if (_tigerMile < 1 && level >= 5) {
-        _tigerMile = 1;
-        _say(Tiny.tiger[0], force: true, face: '😼');
+        morphTo = 1;
       } else if (_tigerMile < 2 && level >= 13) {
-        _tigerMile = 2;
-        _say(Tiny.tiger[1], force: true, face: '🔥');
-      } else {
-        _say(_pick(Tiny.level), force: true, face: '😺');
+        morphTo = 2;
       }
-      // 10레벨마다 특별스킬 선택(남은 게 있으면) — 판을 뒤집는 한 방
-      if (level % 10 == 0 && specials.length < kSpecials.length) {
+      if (morphTo != null) {
+        _tigerMile = morphTo;
+        _morphPendingSpecial = wantSpecial;
+        _triggerMorph(morphTo);
+        return;
+      }
+      _say(_pick(Tiny.level), force: true, face: '😺');
+      if (wantSpecial) {
         _openSpecial();
       } else {
         _openLevelUp();
@@ -1820,6 +1854,17 @@ class World {
     if (shake > 0) shake = max(0, shake - dt * 26);
   }
 
+  // 호랑이 각성 컷신 시작 — 화면을 멈추고 멋진 변신 연출
+  void _triggerMorph(int s) {
+    morphStage = s;
+    morphT = 2.7;
+    morphClock = 0;
+    _morphPendingChoice = true;
+    phase = GPhase.morph;
+    _hapticBig = true;
+    sfx.play('boss'); // 묵직한 각성음
+  }
+
   // ── 레벨업 강화 ──
   void _openLevelUp() {
     phase = GPhase.levelup;
@@ -2125,8 +2170,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     sw.stop();
     world.updMs = world.updMs * 0.9 + sw.elapsedMicroseconds / 1000.0 * 0.1; // update 소요(ms)
     world.consumeHaptics();
-    // 성능: 플레이 중에만 매 프레임 리페인트. 메뉴/정지 화면은 상태 변화(탭·전환) 시에만.
-    if (mounted && (wasPlaying || world.phase != _lastPhase)) setState(() {});
+    // 성능: 플레이 중·각성 컷신 중에는 매 프레임 리페인트. 그 외 화면은 상태 변화 시에만.
+    if (mounted && (wasPlaying || world.phase == GPhase.morph || world.phase != _lastPhase)) {
+      setState(() {});
+    }
     _lastPhase = world.phase;
   }
 
@@ -2174,6 +2221,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.travel) _travelOverlay(),
             if (world.phase == GPhase.options) _optionsOverlay(),
             if (world.phase == GPhase.diag) _diagOverlay(),
+            if (world.phase == GPhase.morph) _morphOverlay(),
             if (world.phase == GPhase.menu) _menuOverlay(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.dead) _death(),
@@ -3224,6 +3272,61 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             }),
           ),
           _backBar(GPhase.options),
+        ]),
+      ),
+    );
+  }
+
+  // ── 호랑이 각성 컷신 — 빛줄기·확산 링·아바타 모핑 + 각성 텍스트(뽕) ──
+  Widget _morphOverlay() {
+    final c = world.morphClock;
+    final stage2 = world.morphStage >= 2;
+    final titleA = ((c - 0.45) / 0.4).clamp(0.0, 1.0);
+    final titlePop = 0.7 + 0.3 * titleA + (titleA > 0.0 && c < 1.0 ? sin(titleA * 3.14) * 0.12 : 0.0);
+    final fade = world.morphT < 0.4 ? (world.morphT / 0.4).clamp(0.0, 1.0) : 1.0;
+    return GestureDetector(
+      onTap: () => setState(() => world.morphT = world.morphT > 0.35 ? 0.35 : world.morphT),
+      child: Opacity(
+        opacity: fade,
+        child: Stack(children: [
+          Positioned.fill(child: CustomPaint(painter: MorphPainter(world))),
+          Align(
+            alignment: const Alignment(0, -0.52),
+            child: Transform.scale(
+              scale: titlePop,
+              child: Opacity(
+                opacity: titleA,
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(stage2 ? '완전한 호랑이' : '각  성',
+                      style: TextStyle(
+                          color: P.gold,
+                          fontSize: stage2 ? 34 : 38,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 4,
+                          shadows: [
+                            Shadow(color: P.blood.withOpacity(0.9), blurRadius: 16),
+                            const Shadow(color: Colors.black, blurRadius: 6),
+                          ])),
+                  const SizedBox(height: 6),
+                  Text(stage2 ? '대륙이 두려워하는 폭군이 되다' : '양의 탈을 벗고, 호랑이로 깨어나다',
+                      style: const TextStyle(
+                          color: P.goldSoft,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.bold,
+                          shadows: [Shadow(color: Colors.black, blurRadius: 4)])),
+                ]),
+              ),
+            ),
+          ),
+          Align(
+            alignment: const Alignment(0, 0.62),
+            child: Opacity(
+              opacity: (titleA * 0.7),
+              child: const Text('어 흥 —!',
+                  style: TextStyle(
+                      color: P.red, fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 6)),
+            ),
+          ),
         ]),
       ),
     );
@@ -4292,4 +4395,141 @@ class WorldPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant WorldPainter old) => true;
+}
+
+// =============================================================================
+//  각성 컷신 페인터 — 빛줄기 + 확산 링 + 양→호랑이 모핑 아바타 (전부 코드)
+// =============================================================================
+class MorphPainter extends CustomPainter {
+  final World w;
+  MorphPainter(this.w);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final t = w.morphClock;
+    final cx = size.width / 2, cy = size.height * 0.42;
+    final R = min(size.width, size.height) * 0.17;
+    final tg = ((t - 0.45) / 0.9).clamp(0.0, 1.0); // 호랑이화 정도 0→1
+    final av = (t * 2.4).clamp(0.0, 1.0); // 아바타 등장 스케일
+    final breathe = 1 + sin(t * 5) * 0.04;
+    final r = R * av * breathe;
+
+    // 회전 빛줄기
+    final rayLen = R * (1.6 + sin(t * 4) * 0.25);
+    final rayPaint = Paint()
+      ..color = P.gold.withOpacity(0.10 + 0.10 * (0.5 + 0.5 * sin(t * 6)))
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    for (int i = 0; i < 20; i++) {
+      final a = t * 1.4 + i * 6.2831853 / 20;
+      final i0 = R * 1.0;
+      canvas.drawLine(Offset(cx + cos(a) * i0, cy + sin(a) * i0),
+          Offset(cx + cos(a) * (i0 + rayLen), cy + sin(a) * (i0 + rayLen)), rayPaint);
+    }
+    // 확산 충격파 링
+    for (int k = 0; k < 3; k++) {
+      final rt = t - 0.4 - k * 0.18;
+      if (rt > 0 && rt < 1.0) {
+        canvas.drawCircle(
+            Offset(cx, cy),
+            rt * max(size.width, size.height) * 0.6,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 5 * (1 - rt)
+              ..color = (k == 1 ? P.blood : P.gold).withOpacity(0.5 * (1 - rt)));
+      }
+    }
+    if (r < 1) return;
+
+    // ── 모핑 아바타 ──
+    const sheepCol = Color(0xFFF3ECDF);
+    final col = Color.lerp(sheepCol, P.gold, tg)!;
+    final stripe = const Color(0xFF3A2606);
+    // 안광
+    canvas.drawCircle(Offset(cx, cy), r * 2.4, Paint()..color = P.gold.withOpacity(0.12 + 0.12 * tg));
+    // 양털(사라짐)
+    if (tg < 0.95) {
+      final wool = Paint()..color = Colors.white.withOpacity((1 - tg) * 0.85);
+      for (int i = 0; i < 10; i++) {
+        final a = i * 6.2831853 / 10 + t * 0.6;
+        canvas.drawCircle(Offset(cx + cos(a) * r * 0.95, cy + sin(a) * r * 0.95),
+            r * 0.42 * (1 - tg * 0.5), wool);
+      }
+    }
+    // 귀: 양(둥근)→호랑이(뾰족) 크로스페이드
+    if (tg < 0.95) {
+      final sp = Paint()..color = col.withOpacity(1 - tg);
+      canvas.drawOval(Rect.fromCenter(center: Offset(cx - r * 0.95, cy - r * 0.35), width: r * 0.7, height: r * 0.5), sp);
+      canvas.drawOval(Rect.fromCenter(center: Offset(cx + r * 0.95, cy - r * 0.35), width: r * 0.7, height: r * 0.5), sp);
+    }
+    if (tg > 0.05) {
+      final tp = Paint()..color = col.withOpacity(tg);
+      final ears = Path()
+        ..moveTo(cx - r * 0.85, cy - r * 0.45)
+        ..lineTo(cx - r * 0.45, cy - r * 1.25)
+        ..lineTo(cx - r * 0.05, cy - r * 0.6)
+        ..close()
+        ..moveTo(cx + r * 0.85, cy - r * 0.45)
+        ..lineTo(cx + r * 0.45, cy - r * 1.25)
+        ..lineTo(cx + r * 0.05, cy - r * 0.6)
+        ..close();
+      canvas.drawPath(ears, tp);
+    }
+    // 얼굴
+    canvas.drawCircle(Offset(cx, cy), r, Paint()..color = col);
+    canvas.drawCircle(Offset(cx, cy), r,
+        Paint()..style = PaintingStyle.stroke..strokeWidth = 3..color = Colors.white.withOpacity(0.85));
+    // 줄무늬 마스크
+    if (tg > 0.05) {
+      final st = Paint()
+        ..color = stripe.withOpacity(tg * 0.9)
+        ..strokeWidth = r * 0.09
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(Offset(cx - r * 0.5, cy - r * 0.55), Offset(cx - r * 0.2, cy - r * 0.2), st);
+      canvas.drawLine(Offset(cx + r * 0.5, cy - r * 0.55), Offset(cx + r * 0.2, cy - r * 0.2), st);
+      canvas.drawLine(Offset(cx, cy - r * 0.72), Offset(cx, cy - r * 0.36), st);
+      canvas.drawLine(Offset(cx - r * 0.72, cy + r * 0.1), Offset(cx - r * 0.42, cy + r * 0.16), st);
+      canvas.drawLine(Offset(cx + r * 0.72, cy + r * 0.1), Offset(cx + r * 0.42, cy + r * 0.16), st);
+    }
+    // 눈
+    final dark = Paint()..color = const Color(0xFF160F06);
+    final ey = cy - r * 0.05;
+    canvas.drawCircle(Offset(cx - r * 0.38, ey), r * 0.2, dark);
+    canvas.drawCircle(Offset(cx + r * 0.38, ey), r * 0.2, dark);
+    final hi = Paint()..color = Colors.white.withOpacity(0.9);
+    canvas.drawCircle(Offset(cx - r * 0.42, ey - r * 0.07), r * 0.07, hi);
+    canvas.drawCircle(Offset(cx + r * 0.34, ey - r * 0.07), r * 0.07, hi);
+    // 사나운 눈썹
+    if (tg > 0.2) {
+      final brow = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = r * 0.09
+        ..strokeCap = StrokeCap.round
+        ..color = stripe.withOpacity(tg);
+      canvas.drawLine(Offset(cx - r * 0.56, ey - r * 0.34), Offset(cx - r * 0.22, ey - r * 0.16), brow);
+      canvas.drawLine(Offset(cx + r * 0.56, ey - r * 0.34), Offset(cx + r * 0.22, ey - r * 0.16), brow);
+    }
+    // 코
+    canvas.drawCircle(Offset(cx, cy + r * 0.32), r * 0.1, dark);
+    // 송곳니
+    if (tg > 0.3) {
+      final fang = Paint()..color = Colors.white.withOpacity(((tg - 0.3) * 1.5).clamp(0.0, 1.0));
+      final ny = cy + r * 0.42;
+      final f1 = Path()
+        ..moveTo(cx - r * 0.18, ny)
+        ..lineTo(cx - r * 0.06, ny)
+        ..lineTo(cx - r * 0.12, ny + r * 0.26)
+        ..close();
+      final f2 = Path()
+        ..moveTo(cx + r * 0.18, ny)
+        ..lineTo(cx + r * 0.06, ny)
+        ..lineTo(cx + r * 0.12, ny + r * 0.26)
+        ..close();
+      canvas.drawPath(f1, fang);
+      canvas.drawPath(f2, fang);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant MorphPainter old) => true;
 }
