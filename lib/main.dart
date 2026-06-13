@@ -13,6 +13,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+// 카메라 줌 아웃 — 논리 아레나 = 화면 / kZoom (더 넓어 보이게). 1.0=원본, <1=멀리.
+const double kZoom = 0.82;
+
 void main() => runApp(const SurvivorApp());
 
 class P {
@@ -1185,13 +1188,13 @@ class World {
     }
     spawnT -= dt;
     if (spawnT > 0) return;
-    // 속도감 — 더 자주·더 많이 쏟아냄(화면 가득 = 정신없고 스릴↑). 개체는 약해서 즉사하니 쉽게 유지.
-    final interval = max(0.32, 1.7 - scaleT * 0.012).toDouble();
+    // 속도감 — 자주·많이(화면 가득). 단 성능 위해 동시 수 상한 보수적으로(개체는 약해 즉사).
+    final interval = max(0.34, 1.7 - scaleT * 0.012).toDouble();
     spawnT = interval;
-    if (enemies.length > 150) return;
-    final count = 1 + (scaleT ~/ 38);
+    if (enemies.length > 96) return;
+    final count = 1 + (scaleT ~/ 44);
     for (int i = 0; i < count; i++) {
-      if (enemies.length > 150) break;
+      if (enemies.length > 96) break;
       _spawnOne();
     }
   }
@@ -1293,7 +1296,7 @@ class World {
       if (clawT <= 0) {
       clawT = ((clawEvo ? 0.5 : 0.8 * pow(0.9, clawLv - 1)) / fireMult).toDouble();
       final target = _nearest();
-      if ((target != null || clawEvo) && bullets.length < 320) {
+      if ((target != null || clawEvo) && bullets.length < 220) {
         final dmg = (9 + clawLv * 4) * dmgMult * (clawEvo ? 1.7 : 1.0);
         final pierce = clawEvo ? 3 : (clawLv >= 5 ? 1 : 0);
         if (clawEvo) {
@@ -1709,11 +1712,14 @@ class World {
                 : (e.type == EType.bomber
                     ? const Color(0xFFE8702E)
                     : (e.type == EType.splitter ? P.green : P.muted)));
-        for (int i = 0; i < (e.type == EType.boss ? 22 : 7); i++) {
-          final a = rng.nextDouble() * 6.2831853;
-          final spd = 40 + rng.nextDouble() * 120;
-          parts.add(Particle(e.x, e.y, cos(a) * spd, sin(a) * spd, 0.4 + rng.nextDouble() * 0.3,
-              2 + rng.nextDouble() * 3, col));
+        // 파티클 — 성능 위해 수 축소 + 총량 상한(과밀 시 생략)
+        if (parts.length < 160) {
+          for (int i = 0; i < (e.type == EType.boss ? 12 : 4); i++) {
+            final a = rng.nextDouble() * 6.2831853;
+            final spd = 40 + rng.nextDouble() * 120;
+            parts.add(Particle(e.x, e.y, cos(a) * spd, sin(a) * spd, 0.35 + rng.nextDouble() * 0.25,
+                2 + rng.nextDouble() * 3, col));
+          }
         }
       }
     }
@@ -1742,6 +1748,14 @@ class World {
 
   // ── 구슬 ──
   void _updateOrbs(double dt) {
+    // 구슬 과밀 방지(성능) — 너무 많으면 오래된 것 자동 흡수
+    if (orbs.length > 90) {
+      final excess = orbs.length - 90;
+      for (int i = 0; i < excess; i++) {
+        xp += orbs[i].value * xpMult;
+      }
+      orbs.removeRange(0, excess);
+    }
     final pr2 = pickupRange * pickupRange;
     for (final o in orbs) {
       final dx = px - o.x, dy = py - o.y;
@@ -2082,12 +2096,16 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _ticker = createTicker(_onTick)..start();
   }
 
+  GPhase _lastPhase = GPhase.title;
   void _onTick(Duration elapsed) {
     final dt = _last == Duration.zero ? 0.0 : (elapsed - _last).inMicroseconds / 1000000.0;
     _last = elapsed;
+    final wasPlaying = world.phase == GPhase.playing;
     world.update(dt);
     world.consumeHaptics();
-    if (mounted) setState(() {});
+    // 성능: 플레이 중에만 매 프레임 리페인트. 메뉴/정지 화면은 상태 변화(탭·전환) 시에만.
+    if (mounted && (wasPlaying || world.phase != _lastPhase)) setState(() {});
+    _lastPhase = world.phase;
   }
 
   @override
@@ -2101,8 +2119,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     return Scaffold(
       body: SafeArea(
         child: LayoutBuilder(builder: (context, cons) {
-          world.w = cons.maxWidth;
-          world.h = cons.maxHeight;
+          // 논리 아레나는 화면보다 크게(=화면/kZoom) → 페인터가 kZoom으로 축소해 그림(줌 아웃)
+          world.w = cons.maxWidth / kZoom;
+          world.h = cons.maxHeight / kZoom;
           return Stack(children: [
             // 게임 레이어 + 입력
             Positioned.fill(
@@ -3636,30 +3655,36 @@ class WorldPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 배경(흔들림 영향 X) — 스테이지 테마별 그라데이션 + 그리드 + 부유 모트
     final th = _themes[_ti];
+    // 배경 — 화면 전체(줌·흔들림 영향 X, 가장자리 안전)
     final bg = Paint()
       ..shader = RadialGradient(
         colors: [th[0], th[1]],
         radius: 1.0,
       ).createShader(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, bg);
-    _grid(canvas, size, th[2]);
-    _motes(canvas, size, th[3]);
 
-    if (w.phase == GPhase.title) return;
-
-    // 화면 흔들림 — 내용물만 (옵션 OFF면 생략)
+    // 줌 아웃 — 논리 아레나(=화면/kZoom)를 축소해 더 넓어 보이게. UI(플래시·조이스틱)는 줌 밖.
     canvas.save();
+    canvas.scale(kZoom, kZoom);
     if (w.optShake && w.shake > 0.2) {
-      final dx = sin(w.time * 91.0) * w.shake;
-      final dy = cos(w.time * 73.0) * w.shake;
-      canvas.translate(dx, dy);
+      canvas.translate(sin(w.time * 91.0) * w.shake, cos(w.time * 73.0) * w.shake);
+    }
+    final lsize = Size(w.w, w.h); // 논리 크기
+    _grid(canvas, lsize, th[2]);
+    _motes(canvas, lsize, th[3]);
+
+    if (w.phase == GPhase.title) {
+      canvas.restore();
+      return;
     }
 
-    // 마나 구슬
+    // 마나 구슬 — 가벼운 2겹(성능: 글로우 3겹 대신)
+    final orbHalo = Paint()..color = P.cyan.withOpacity(0.22);
+    final orbCore = Paint()..color = P.cyan;
     for (final o in w.orbs) {
-      _glow(canvas, o.x, o.y, 3.0, P.cyan, core: 0.95);
+      canvas.drawCircle(Offset(o.x, o.y), 5.0, orbHalo);
+      canvas.drawCircle(Offset(o.x, o.y), 2.4, orbCore);
     }
 
     // 바닥 파워업 픽업 (통통 튀는 발광 + 아이콘) — 눈에 띄게
@@ -3721,48 +3746,52 @@ class WorldPainter extends CustomPainter {
       _enemy(canvas, e);
     }
 
-    // 투사체 (발톱) — 진행 방향 잔상 + 발광
+    // 투사체 (발톱) — 잔상 + 코어 (성능: Paint 재사용, 글로우 2겹)
+    final bTrail = Paint()
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round
+      ..color = P.gold.withOpacity(0.4);
+    final bHalo = Paint()..color = P.goldSoft.withOpacity(0.3);
+    final bCore = Paint()..color = P.goldSoft;
     for (final b in w.bullets) {
-      canvas.drawLine(
-          Offset(b.x - b.vx * 0.028, b.y - b.vy * 0.028),
-          Offset(b.x, b.y),
-          Paint()
-            ..strokeWidth = 3
-            ..strokeCap = StrokeCap.round
-            ..color = P.gold.withOpacity(0.4));
-      _glow(canvas, b.x, b.y, b.radius * 0.7, P.goldSoft);
+      canvas.drawLine(Offset(b.x - b.vx * 0.028, b.y - b.vy * 0.028), Offset(b.x, b.y), bTrail);
+      canvas.drawCircle(Offset(b.x, b.y), b.radius * 1.4, bHalo);
+      canvas.drawCircle(Offset(b.x, b.y), b.radius * 0.7, bCore);
     }
 
-    // 원거리 적 투사체 (붉은 발광 — 위협)
+    // 원거리 적 투사체 (붉은 — 위협)
+    final eTrail = Paint()
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round
+      ..color = P.red.withOpacity(0.4);
+    final eHalo = Paint()..color = P.red.withOpacity(0.25);
+    final eCore = Paint()..color = P.red;
     for (final b in w.eBullets) {
-      canvas.drawLine(
-          Offset(b.x - b.vx * 0.03, b.y - b.vy * 0.03),
-          Offset(b.x, b.y),
-          Paint()
-            ..strokeWidth = 3
-            ..strokeCap = StrokeCap.round
-            ..color = P.red.withOpacity(0.4));
-      _glow(canvas, b.x, b.y, 4.0, P.red, core: 0.9);
+      canvas.drawLine(Offset(b.x - b.vx * 0.03, b.y - b.vy * 0.03), Offset(b.x, b.y), eTrail);
+      canvas.drawCircle(Offset(b.x, b.y), 7.0, eHalo);
+      canvas.drawCircle(Offset(b.x, b.y), 3.5, eCore);
     }
 
     // 회전 송곳니 (진화 시 더 많고 크게)
     if (w.fangLv > 0) {
       final cnt = w.fangLv + (w.fangEvo ? 3 : 0);
       final orad = (60 + w.fangLv * 4.0) * (w.fangEvo ? 1.4 : 1.0);
+      final fHalo = Paint()..color = P.cyan.withOpacity(0.25);
+      final fCore = Paint()..color = P.cyan;
+      final fr = w.fangEvo ? 8.0 : 6.0;
       for (int i = 0; i < cnt; i++) {
         final a = w.orbitAngle + i * 6.2831853 / cnt;
-        _glow(canvas, w.px + cos(a) * orad, w.py + sin(a) * orad,
-            w.fangEvo ? 8.0 : 6.0, P.cyan, core: 0.95);
+        final fx = w.px + cos(a) * orad, fy = w.py + sin(a) * orad;
+        canvas.drawCircle(Offset(fx, fy), fr * 1.6, fHalo);
+        canvas.drawCircle(Offset(fx, fy), fr, fCore);
       }
     }
 
-    // 파티클 (발광 스파크)
+    // 파티클 (발광 스파크) — 단일 원(성능)
     for (final pt in w.parts) {
       final a = (pt.life / pt.maxLife).clamp(0.0, 1.0);
-      canvas.drawCircle(Offset(pt.x, pt.y), pt.size * a + 0.5,
-          Paint()..color = pt.color.withOpacity(a));
-      canvas.drawCircle(Offset(pt.x, pt.y), (pt.size * a + 0.5) * 2,
-          Paint()..color = pt.color.withOpacity(a * 0.25));
+      canvas.drawCircle(
+          Offset(pt.x, pt.y), pt.size * a + 0.6, Paint()..color = pt.color.withOpacity(a));
     }
 
     // 플레이어 (백호 — 네온 골드)
@@ -3880,7 +3909,7 @@ class WorldPainter extends CustomPainter {
             Paint()..color = P.gold);
       }
     }
-    canvas.drawCircle(Offset(e.x, e.y), e.radius * 1.7, Paint()..color = base.withOpacity(0.10));
+    // 성능: 외곽 후광 제거. 어두운 코어 + 네온 링 + 눈만(가독성 유지)
     canvas.drawCircle(Offset(e.x, e.y), e.radius, Paint()..color = const Color(0xFF0E0A08));
     canvas.drawCircle(
         Offset(e.x, e.y),
