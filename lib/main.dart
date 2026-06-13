@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-3';
+const String kSaveVer = 'v2026.06.13-4';
 
 void main() => runApp(const SurvivorApp());
 
@@ -268,6 +268,21 @@ const List<Gear> kGear = [
 const List<Color> kRarityCol = [P.parch, P.cyan, P.purple, P.gold];
 const List<String> kRarityName = ['일반', '희귀', '영웅', '전설'];
 
+// 공지 / 이벤트 (메인 로비) — 패치 소식·이벤트·팁. tag: 'event'=이벤트, 'new'=신규, 'tip'=팁
+class Notice {
+  final String tag, icon, title, body;
+  const Notice(this.tag, this.icon, this.title, this.body);
+}
+
+const List<Notice> kNotices = [
+  Notice('event', '🎁', '데일리 보너스', '하루 첫 접속마다 송곳니 +30! 매일 들러서 챙기세요.'),
+  Notice('new', '🖼', '초상화 진급 시스템', '레벨 5·8·13·20에 양→호랑이로 진급! 진급마다 능력치가 영구 상승합니다.'),
+  Notice('new', '⚔', '끝없는 난이도', '스테이지가 오를수록 적이 끝없이 강해집니다. 더 높은 사냥터=더 큰 보상!'),
+  Notice('new', '🛡', '장비 & 창고', '보스 전리품으로 장비를 얻고 대장간에서 구매·장착하세요. 3슬롯·레어도 4단계.'),
+  Notice('tip', '💪', '성장의 핵심', '단련(영구 강화)·치명타·포식 누적·특별스킬을 조합해 나만의 빌드를 키우세요.'),
+  Notice('tip', '🐯', '치트(테스트)', '타이니 메뉴의 +10레벨로 빠르게 시험해볼 수 있습니다(출시 전 제거 예정).'),
+];
+
 // =============================================================================
 //  사운드 — 에셋 0. Dart에서 PCM 합성 → WAV → data URI → AudioElement 재생.
 //  (Web Audio API 메서드명 리스크 회피, 전부 안정적인 표준 API)
@@ -396,7 +411,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, travel, options, diag, morph }
+enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, travel, options, diag, morph, notice }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -2272,6 +2287,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.travel) _travelOverlay(),
             if (world.phase == GPhase.options) _optionsOverlay(),
             if (world.phase == GPhase.diag) _diagOverlay(),
+            if (world.phase == GPhase.notice) _noticeOverlay(),
             if (world.phase == GPhase.morph) _morphOverlay(),
             if (world.phase == GPhase.menu) _menuOverlay(),
             if (world.phase == GPhase.levelup) _levelUp(),
@@ -2641,6 +2657,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           const Text('드래그로 이동 · 공격 자동 · 광기가 차면 [어흥!]',
               textAlign: TextAlign.center,
               style: TextStyle(color: P.muted, fontSize: 12)),
+          const SizedBox(height: 14),
+          // 📢 공지·이벤트 (메인 로비)
+          SizedBox(
+            width: 300,
+            child: _actBtn('📢  공지 · 이벤트', P.cyan, false,
+                () => setState(() => world.phase = GPhase.notice)),
+          ),
           const SizedBox(height: 18),
           const Text('세이브 슬롯',
               style: TextStyle(color: P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
@@ -3328,6 +3351,56 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         ]),
       ),
     );
+  }
+
+  // ── 공지 · 이벤트 (메인 로비) ──
+  Widget _noticeOverlay() {
+    return _ovl(
+        '📢',
+        '공지 · 이벤트',
+        kNotices.map((n) {
+          final tc = n.tag == 'event' ? P.gold : (n.tag == 'new' ? P.cyan : P.muted);
+          final tl = n.tag == 'event' ? '이벤트' : (n.tag == 'new' ? '신규' : '팁');
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 9),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+              decoration: BoxDecoration(
+                color: P.panel,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: tc.withOpacity(0.5)),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(n.icon, style: const TextStyle(fontSize: 24)),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                            color: tc.withOpacity(0.2), borderRadius: BorderRadius.circular(5)),
+                        child: Text(tl,
+                            style: TextStyle(color: tc, fontSize: 9, fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(width: 7),
+                      Flexible(
+                        child: Text(n.title,
+                            style: const TextStyle(
+                                color: P.goldSoft, fontSize: 13.5, fontWeight: FontWeight.bold)),
+                      ),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(n.body,
+                        style: const TextStyle(color: P.parch, fontSize: 11.5, height: 1.35)),
+                  ]),
+                ),
+              ]),
+            ),
+          );
+        }).toList(),
+        GPhase.title,
+        fangs: false);
   }
 
   // ── 초상화 진급 '짜잔' 컷신 — 새 초상화 공개 + 능력치 상승 + 탭하여 계속 ──
