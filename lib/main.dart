@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-1';
+const String kSaveVer = 'v2026.06.13-2';
 
 void main() => runApp(const SurvivorApp());
 
@@ -3340,6 +3340,23 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       onTap: () => setState(() => world.dismissMorph()),
       child: Stack(children: [
         Positioned.fill(child: CustomPaint(painter: MorphPainter(world))),
+        // 이전 / 지금 라벨 (아바타 아래)
+        Align(
+          alignment: const Alignment(-0.46, 0.06),
+          child: Opacity(
+            opacity: titleA * 0.8,
+            child: Text(prev.name,
+                style: const TextStyle(color: P.muted, fontSize: 11, fontWeight: FontWeight.bold)),
+          ),
+        ),
+        Align(
+          alignment: const Alignment(0.46, 0.06),
+          child: Opacity(
+            opacity: titleA,
+            child: const Text('NEW!',
+                style: TextStyle(color: P.gold, fontSize: 13, fontWeight: FontWeight.bold)),
+          ),
+        ),
         // 새 초상화 이름 (위)
         Align(
           alignment: const Alignment(0, -0.62),
@@ -4529,7 +4546,8 @@ class WorldPainter extends CustomPainter {
 }
 
 // =============================================================================
-//  각성 컷신 페인터 — 빛줄기 + 확산 링 + 양→호랑이 모핑 아바타 (전부 코드)
+//  초상화 진급 컷신 페인터 — 이전 → (화살표) → 새 초상화 비교 + 빛줄기·충격파
+//  (다른 게임 진화/랭크업 UI 참조: before→after + arrow)
 // =============================================================================
 class MorphPainter extends CustomPainter {
   final World w;
@@ -4538,63 +4556,88 @@ class MorphPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final t = w.morphClock;
-    final cx = size.width / 2, cy = size.height * 0.42;
-    final R = min(size.width, size.height) * 0.17;
-    final tg = w.tigerProg; // 새 초상화 단계의 외형(짜잔 — 바로 새 모습)
-    // 짜잔 등장: 빠르게 커졌다가(오버슈트) 안정. + 숨쉬기
-    final av = t < 0.3 ? (t / 0.3) * 1.18 : (1.0 + sin((t - 0.3) * 5) * 0.05);
-    final r = R * av.clamp(0.0, 1.3);
+    final cy = size.height * 0.40;
+    final R = min(size.width, size.height) * 0.13;
+    final cxL = size.width * 0.27, cxR = size.width * 0.73;
+    final fromProg = kPortraits[w.morphFromTier.clamp(0, kPortraits.length - 1)].prog;
+    final newProg = w.tigerProg;
+    // 오른쪽(새) 등장 스케일 — 짜잔 팝
+    final pop = t < 0.32 ? (t / 0.32) * 1.15 : (1.0 + sin((t - 0.32) * 5) * 0.05);
 
-    // 회전 빛줄기
-    final rayLen = R * (1.6 + sin(t * 4) * 0.25);
+    // 새 초상화 주변 회전 빛줄기
+    final rayLen = R * (1.3 + sin(t * 4) * 0.25);
     final rayPaint = Paint()
       ..color = P.gold.withOpacity(0.10 + 0.10 * (0.5 + 0.5 * sin(t * 6)))
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
-    for (int i = 0; i < 20; i++) {
-      final a = t * 1.4 + i * 6.2831853 / 20;
+    for (int i = 0; i < 18; i++) {
+      final a = t * 1.4 + i * 6.2831853 / 18;
       final i0 = R * 1.0;
-      canvas.drawLine(Offset(cx + cos(a) * i0, cy + sin(a) * i0),
-          Offset(cx + cos(a) * (i0 + rayLen), cy + sin(a) * (i0 + rayLen)), rayPaint);
+      canvas.drawLine(Offset(cxR + cos(a) * i0, cy + sin(a) * i0),
+          Offset(cxR + cos(a) * (i0 + rayLen), cy + sin(a) * (i0 + rayLen)), rayPaint);
     }
-    // 확산 충격파 링
+    // 확산 충격파 링(새 쪽)
     for (int k = 0; k < 3; k++) {
-      final rt = t - 0.4 - k * 0.18;
+      final rt = t - 0.32 - k * 0.16;
       if (rt > 0 && rt < 1.0) {
         canvas.drawCircle(
-            Offset(cx, cy),
-            rt * max(size.width, size.height) * 0.6,
+            Offset(cxR, cy),
+            rt * size.width * 0.4,
             Paint()
               ..style = PaintingStyle.stroke
               ..strokeWidth = 5 * (1 - rt)
               ..color = (k == 1 ? P.blood : P.gold).withOpacity(0.5 * (1 - rt)));
       }
     }
-    if (r < 1) return;
 
-    // ── 모핑 아바타 ──
+    // 이전 초상화 (왼쪽, 어둡게·작게·고정)
+    _avatar(canvas, cxL, cy, R * 0.82, fromProg, t, 0.45);
+    // 새 초상화 (오른쪽, 밝게·팝)
+    _avatar(canvas, cxR, cy, R * pop.clamp(0.0, 1.25), newProg, t, 1.0);
+
+    // 화살표 (이전 → 새), 등장 후 펄스
+    if (t > 0.25) {
+      final ax0 = cxL + R * 1.05, ax1 = cxR - R * 1.15;
+      if (ax1 > ax0) {
+        final pulse = 0.6 + 0.4 * (0.5 + 0.5 * sin(t * 8));
+        final ap = Paint()
+          ..color = P.gold.withOpacity(pulse)
+          ..strokeWidth = 5
+          ..strokeCap = StrokeCap.round;
+        canvas.drawLine(Offset(ax0, cy), Offset(ax1, cy), ap);
+        canvas.drawLine(Offset(ax1, cy), Offset(ax1 - 13, cy - 10), ap);
+        canvas.drawLine(Offset(ax1, cy), Offset(ax1 - 13, cy + 10), ap);
+      }
+    }
+  }
+
+  // 초상화 아바타 1개 그리기 (tg=외형, a=알파)
+  void _avatar(Canvas canvas, double cx, double cy, double r, double tg, double t, double a) {
+    if (r < 1) return;
     const sheepCol = Color(0xFFF3ECDF);
-    final col = Color.lerp(sheepCol, P.gold, tg)!;
-    final stripe = const Color(0xFF3A2606);
+    final col0 = Color.lerp(sheepCol, P.gold, tg)!;
+    final col = col0.withOpacity(a);
+    const stripe = Color(0xFF3A2606);
     // 안광
-    canvas.drawCircle(Offset(cx, cy), r * 2.4, Paint()..color = P.gold.withOpacity(0.12 + 0.12 * tg));
-    // 양털(사라짐)
+    canvas.drawCircle(Offset(cx, cy), r * 1.9, Paint()..color = P.gold.withOpacity((0.10 + 0.12 * tg) * a));
+    // 양털
     if (tg < 0.95) {
-      final wool = Paint()..color = Colors.white.withOpacity((1 - tg) * 0.85);
+      final wool = Paint()..color = Colors.white.withOpacity((1 - tg) * 0.8 * a);
       for (int i = 0; i < 10; i++) {
-        final a = i * 6.2831853 / 10 + t * 0.6;
-        canvas.drawCircle(Offset(cx + cos(a) * r * 0.95, cy + sin(a) * r * 0.95),
+        final ang = i * 6.2831853 / 10 + t * 0.6;
+        canvas.drawCircle(Offset(cx + cos(ang) * r * 0.95, cy + sin(ang) * r * 0.95),
             r * 0.42 * (1 - tg * 0.5), wool);
       }
     }
-    // 귀: 양(둥근)→호랑이(뾰족) 크로스페이드
+    // 양 귀
     if (tg < 0.95) {
-      final sp = Paint()..color = col.withOpacity(1 - tg);
+      final sp = Paint()..color = col0.withOpacity((1 - tg) * a);
       canvas.drawOval(Rect.fromCenter(center: Offset(cx - r * 0.95, cy - r * 0.35), width: r * 0.7, height: r * 0.5), sp);
       canvas.drawOval(Rect.fromCenter(center: Offset(cx + r * 0.95, cy - r * 0.35), width: r * 0.7, height: r * 0.5), sp);
     }
+    // 호랑이 귀
     if (tg > 0.05) {
-      final tp = Paint()..color = col.withOpacity(tg);
+      final tp = Paint()..color = col0.withOpacity(tg * a);
       final ears = Path()
         ..moveTo(cx - r * 0.85, cy - r * 0.45)
         ..lineTo(cx - r * 0.45, cy - r * 1.25)
@@ -4609,25 +4652,23 @@ class MorphPainter extends CustomPainter {
     // 얼굴
     canvas.drawCircle(Offset(cx, cy), r, Paint()..color = col);
     canvas.drawCircle(Offset(cx, cy), r,
-        Paint()..style = PaintingStyle.stroke..strokeWidth = 3..color = Colors.white.withOpacity(0.85));
-    // 줄무늬 마스크
+        Paint()..style = PaintingStyle.stroke..strokeWidth = 3..color = Colors.white.withOpacity(0.85 * a));
+    // 줄무늬
     if (tg > 0.05) {
       final st = Paint()
-        ..color = stripe.withOpacity(tg * 0.9)
+        ..color = stripe.withOpacity(tg * 0.9 * a)
         ..strokeWidth = r * 0.09
         ..strokeCap = StrokeCap.round;
       canvas.drawLine(Offset(cx - r * 0.5, cy - r * 0.55), Offset(cx - r * 0.2, cy - r * 0.2), st);
       canvas.drawLine(Offset(cx + r * 0.5, cy - r * 0.55), Offset(cx + r * 0.2, cy - r * 0.2), st);
       canvas.drawLine(Offset(cx, cy - r * 0.72), Offset(cx, cy - r * 0.36), st);
-      canvas.drawLine(Offset(cx - r * 0.72, cy + r * 0.1), Offset(cx - r * 0.42, cy + r * 0.16), st);
-      canvas.drawLine(Offset(cx + r * 0.72, cy + r * 0.1), Offset(cx + r * 0.42, cy + r * 0.16), st);
     }
     // 눈
-    final dark = Paint()..color = const Color(0xFF160F06);
+    final dark = Paint()..color = const Color(0xFF160F06).withOpacity(a);
     final ey = cy - r * 0.05;
     canvas.drawCircle(Offset(cx - r * 0.38, ey), r * 0.2, dark);
     canvas.drawCircle(Offset(cx + r * 0.38, ey), r * 0.2, dark);
-    final hi = Paint()..color = Colors.white.withOpacity(0.9);
+    final hi = Paint()..color = Colors.white.withOpacity(0.9 * a);
     canvas.drawCircle(Offset(cx - r * 0.42, ey - r * 0.07), r * 0.07, hi);
     canvas.drawCircle(Offset(cx + r * 0.34, ey - r * 0.07), r * 0.07, hi);
     // 사나운 눈썹
@@ -4636,7 +4677,7 @@ class MorphPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = r * 0.09
         ..strokeCap = StrokeCap.round
-        ..color = stripe.withOpacity(tg);
+        ..color = stripe.withOpacity(tg * a);
       canvas.drawLine(Offset(cx - r * 0.56, ey - r * 0.34), Offset(cx - r * 0.22, ey - r * 0.16), brow);
       canvas.drawLine(Offset(cx + r * 0.56, ey - r * 0.34), Offset(cx + r * 0.22, ey - r * 0.16), brow);
     }
@@ -4644,7 +4685,7 @@ class MorphPainter extends CustomPainter {
     canvas.drawCircle(Offset(cx, cy + r * 0.32), r * 0.1, dark);
     // 송곳니
     if (tg > 0.3) {
-      final fang = Paint()..color = Colors.white.withOpacity(((tg - 0.3) * 1.5).clamp(0.0, 1.0));
+      final fang = Paint()..color = Colors.white.withOpacity((((tg - 0.3) * 1.5).clamp(0.0, 1.0)) * a);
       final ny = cy + r * 0.42;
       final f1 = Path()
         ..moveTo(cx - r * 0.18, ny)
