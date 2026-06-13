@@ -458,6 +458,7 @@ class World {
   bool optFlash = true; // 화면 번쩍임(광과민 접근성)
   bool optDmgNum = true; // 데미지 숫자 표시
   bool optHaptic = true; // 진동(햅틱)
+  bool optPerf = false; // 성능 정보(FPS·엔티티 수) 표시 — 진단용
   int joyPos = 1; // 조이스틱 위치 0=좌 1=중앙 2=우
 
   double get critChance => 0.12; // 크리 확률(추후 장비/메타 확장 여지)
@@ -838,6 +839,7 @@ class World {
       optFlash = j['flash'] as bool? ?? true;
       optDmgNum = j['dmgnum'] as bool? ?? true;
       optHaptic = j['haptic'] as bool? ?? true;
+      optPerf = j['perf'] as bool? ?? false;
       sfx.muted = j['mute'] as bool? ?? false;
       joyPos = (j['joy'] as int?) ?? 1;
     } catch (_) {}
@@ -850,6 +852,7 @@ class World {
         'flash': optFlash,
         'dmgnum': optDmgNum,
         'haptic': optHaptic,
+        'perf': optPerf,
         'mute': sfx.muted,
         'joy': joyPos,
       });
@@ -1781,6 +1784,8 @@ class World {
   }
 
   void _updateFx(double dt) {
+    // 펄스 과밀 방지(성능) — 폭발·포효·처치 등으로 누적되면 오래된 것부터 제거
+    if (pulses.length > 40) pulses.removeRange(0, pulses.length - 40);
     for (final p in parts) {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
@@ -2100,9 +2105,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   }
 
   GPhase _lastPhase = GPhase.title;
+  double _fps = 60;
   void _onTick(Duration elapsed) {
     final dt = _last == Duration.zero ? 0.0 : (elapsed - _last).inMicroseconds / 1000000.0;
     _last = elapsed;
+    if (dt > 0.0001) _fps = _fps * 0.9 + (1.0 / dt) * 0.1; // FPS 이동평균(진단)
     final wasPlaying = world.phase == GPhase.playing;
     world.update(dt);
     world.consumeHaptics();
@@ -2145,6 +2152,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.playing) _rageButton(),
             if (world.phase == GPhase.playing) _tinyCallButton(),
             if (world.phase == GPhase.playing && world.combo >= 5) _comboDisplay(),
+            if (world.optPerf) _perfHud(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.shop) _shopOverlay(),
             if (world.phase == GPhase.achieve) _achieveOverlay(),
@@ -2192,6 +2200,32 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             // 경험치
             _bar(xpFrac, P.cyan, height: 6),
           ]),
+        ),
+      ),
+    );
+  }
+
+  // ── 성능 진단 HUD (옵션) — FPS + 엔티티 수. 렉 원인 파악용 ──
+  Widget _perfHud() {
+    final w = world;
+    final fps = _fps.round();
+    final col = fps >= 50 ? P.green : (fps >= 30 ? P.gold : P.red);
+    return Positioned(
+      top: 2,
+      left: 6,
+      child: IgnorePointer(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.55),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            '$fps fps  적${w.enemies.length} 탄${w.bullets.length} 구${w.orbs.length} '
+            '입${w.parts.length} 펄${w.pulses.length} 적탄${w.eBullets.length}',
+            style: TextStyle(
+                color: col, fontSize: 10, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+          ),
         ),
       ),
     );
@@ -3009,6 +3043,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               })),
           _toggleRow('🔢 데미지 숫자', world.optDmgNum, () => setState(() {
                 world.optDmgNum = !world.optDmgNum;
+                world.saveOpts();
+              })),
+          _toggleRow('📊 성능 정보 (FPS·수)', world.optPerf, () => setState(() {
+                world.optPerf = !world.optPerf;
                 world.saveOpts();
               })),
           const SizedBox(height: 8),
