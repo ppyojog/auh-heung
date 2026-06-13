@@ -460,6 +460,9 @@ class World {
   bool optHaptic = true; // 진동(햅틱)
   bool optPerf = false; // 성능 정보(FPS·엔티티 수) 표시 — 진단용
   int joyPos = 1; // 조이스틱 위치 0=좌 1=중앙 2=우
+  // 배경 그라데이션 셰이더 캐시(매 프레임 재생성 방지 — 성능)
+  Shader? bgShader;
+  String bgKey = '';
 
   double get critChance => 0.12; // 크리 확률(추후 장비/메타 확장 여지)
   double get comboDmg => 1.0 + (combo > 60 ? 60 : combo) * 0.004; // 콤보 공격 보너스(최대 +24%)
@@ -652,7 +655,7 @@ class World {
   }
 
   void _float(double x, double y, String t, Color c, double size) {
-    if (floats.length > 46) floats.removeAt(0);
+    if (floats.length > 24) floats.removeAt(0); // 상한↓(웹 텍스트 레이아웃 비용 큼)
     floats.add(FloatText(x, y, t, c, size));
   }
 
@@ -1744,10 +1747,11 @@ class World {
     final crit = rng.nextDouble() < critChance;
     final d = crit ? dmg * 2.0 : dmg;
     _hurt(e, d);
+    // 데미지 숫자는 웹에서 비싸므로 크리만 항상, 일반 타격은 일부만 표시(렉 방지)
     if (crit) {
       _float(e.x, e.y - e.radius - 6, '${d.round()}!', P.gold, size + 7);
       _hs(0.045); // 크리 순간 미세 정지
-    } else {
+    } else if (rng.nextDouble() < 0.3) {
       _float(e.x, e.y - e.radius - 4, d.round().toString(), col, size);
     }
   }
@@ -1755,8 +1759,8 @@ class World {
   // ── 구슬 ──
   void _updateOrbs(double dt) {
     // 구슬 과밀 방지(성능) — 너무 많으면 오래된 것 자동 흡수
-    if (orbs.length > 90) {
-      final excess = orbs.length - 90;
+    if (orbs.length > 50) {
+      final excess = orbs.length - 50;
       for (int i = 0; i < excess; i++) {
         xp += orbs[i].value * xpMult;
       }
@@ -3697,13 +3701,14 @@ class WorldPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final th = _themes[_ti];
-    // 배경 — 화면 전체(줌·흔들림 영향 X, 가장자리 안전)
-    final bg = Paint()
-      ..shader = RadialGradient(
-        colors: [th[0], th[1]],
-        radius: 1.0,
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, bg);
+    // 배경 — 화면 전체. 셰이더 캐시(크기·테마 동일하면 재사용 → 매 프레임 생성 비용 제거)
+    final key = '${size.width.round()}x${size.height.round()}_$_ti';
+    if (w.bgShader == null || w.bgKey != key) {
+      w.bgShader = RadialGradient(colors: [th[0], th[1]], radius: 1.0)
+          .createShader(Offset.zero & size);
+      w.bgKey = key;
+    }
+    canvas.drawRect(Offset.zero & size, Paint()..shader = w.bgShader);
 
     // 줌 아웃 — 논리 아레나(=화면/kZoom)를 축소해 더 넓어 보이게. UI(플래시·조이스틱)는 줌 밖.
     canvas.save();
@@ -3720,12 +3725,10 @@ class WorldPainter extends CustomPainter {
       return;
     }
 
-    // 마나 구슬 — 가벼운 2겹(성능: 글로우 3겹 대신)
-    final orbHalo = Paint()..color = P.cyan.withOpacity(0.22);
+    // 마나 구슬 — 단일 원(성능)
     final orbCore = Paint()..color = P.cyan;
     for (final o in w.orbs) {
-      canvas.drawCircle(Offset(o.x, o.y), 5.0, orbHalo);
-      canvas.drawCircle(Offset(o.x, o.y), 2.4, orbCore);
+      canvas.drawCircle(Offset(o.x, o.y), 3.2, orbCore);
     }
 
     // 바닥 파워업 픽업 (통통 튀는 발광 + 아이콘) — 눈에 띄게
