@@ -1584,8 +1584,15 @@ class World {
   }
 
   // 데일리 보너스 — 하루 첫 접속 시 송곳니 +30 (리텐션, 비강제)
+  //  ※ 기존 세이브가 있는 슬롯에만 지급. 빈 슬롯을 누를 때 보너스가 생기거나
+  //    슬롯이 멋대로 만들어지는 현상 방지(+ 삭제→재선택 악용 차단).
   void _checkDaily() {
     try {
+      bool hasSave = false;
+      try {
+        hasSave = html.window.localStorage[_metaKey] != null;
+      } catch (_) {}
+      if (!hasSave) return; // 빈 슬롯이면 아무것도 하지 않음
       final n = DateTime.now();
       final today =
           '${n.year}${n.month.toString().padLeft(2, '0')}${n.day.toString().padLeft(2, '0')}';
