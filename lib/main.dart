@@ -419,7 +419,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, forge, travel, options, diag, morph, notice, den, curse }
+enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, forge, travel, options, diag, morph, notice, den, curse, stance }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -474,6 +474,23 @@ const List<Curse> kCurses = [
   Curse('swift', '🏃', '광란', '적 이동속도 +30%', 0.25),
   Curse('glass', '💀', '유리 몸', '내 최대 체력 −40%', 0.35),
   Curse('hunted', '🕒', '쫓기는 자', '거대 맹수가 2배 자주 강림', 0.25),
+];
+
+// 출격 태세(천부) — 출격 전 단 하나만 고르는 상호배타 빌드 정체성. 장점+단점(기회비용)이 전략을 만든다.
+//  시련·소굴·런 빌드와 곱해져 "어떤 태세로 어떤 시련을 감당할까" 조합이 핵심 결정이 된다.
+class Stance {
+  final String id, icon, name, desc;
+  final double dmg, taken, asp, spd, hp, greed; // 배수(1=영향 없음)
+  const Stance(this.id, this.icon, this.name, this.desc,
+      {this.dmg = 1, this.taken = 1, this.asp = 1, this.spd = 1, this.hp = 1, this.greed = 1});
+}
+
+const List<Stance> kStances = [
+  Stance('balanced', '🐂', '균형', '보너스도 페널티도 없는 무난한 태세'),
+  Stance('berserk', '⚔', '광전사', '공격 +30% · 받는 피해 +20%', dmg: 1.30, taken: 1.20),
+  Stance('guardian', '🛡', '수호자', '받는 피해 −25% · 공격 −12%', taken: 0.75, dmg: 0.88),
+  Stance('hunter', '🦅', '사냥꾼', '경험치·수집 +35% · 최대 체력 −18%', greed: 1.35, hp: 0.82),
+  Stance('swift', '🌀', '질풍', '공속 +22% · 이속 +12% · 최대 체력 −12%', asp: 1.22, spd: 1.12, hp: 0.88),
 ];
 
 // 업적 — 달성 시 송곳니 보상 + 영구 기록(리텐션·목표)
@@ -983,6 +1000,13 @@ class World {
   double get curseBoss => cur('hunted') ? 0.50 : 1.0; // 보스 간격 배수
   double get curseMaxHp => cur('glass') ? 0.60 : 1.0;
 
+  // ── 출격 태세(천부) ──
+  String stance = 'balanced';
+  Stance get curStance =>
+      kStances.firstWhere((s) => s.id == stance, orElse: () => kStances[0]);
+  // 플레이어가 받는 총 피해 배수 — 방어(요새/강철가죽) × 태세 × 시련(적 공격). 한 곳에서 일관 적용.
+  double get incomingMult => armorMult * curStance.taken * curseEnemyDmg;
+
   bool buyMeta(String id) {
     final m = kMeta.firstWhere((e) => e.id == id);
     if (metaLv(id) >= m.maxLv) return false;
@@ -1077,14 +1101,17 @@ class World {
       (baseMaxHp + 25 * hideLv + 15 * metaLv('hp') + denVal('hp') + gearStat('hp') + portraitBonus('hp')) *
       charHp *
       prestigeMult *
-      curseMaxHp;
+      curseMaxHp *
+      curStance.hp;
   double get speed =>
       baseSpeed *
       (1 + 0.10 * windLv + 0.04 * metaLv('spd') + 0.01 * gearStat('spd') + 0.01 * portraitBonus('spd')) *
       charSpeed *
-      (berserkT > 0 ? 1.18 : 1.0);
+      (berserkT > 0 ? 1.18 : 1.0) *
+      curStance.spd;
   double get pickupRange =>
-      72 + 16.0 * hungerLv + 8 * metaLv('pick') + gearStat('pick') + (sp('magnet') ? 80 : 0);
+      (72 + 16.0 * hungerLv + 8 * metaLv('pick') + gearStat('pick') + (sp('magnet') ? 80 : 0)) *
+      curStance.greed;
   // 소굴 재생굴 — 초당 체력 회복(전투 중 적용)
   double get denRegen => denVal('regen');
   // 포식(Devour) 누적 성장 — 먹을수록(처치할수록) 연속적으로 강해진다(양→호랑이 핵심 파워).
@@ -1097,16 +1124,18 @@ class World {
       charDmg *
       prestigeMult *
       (berserkT > 0 ? 1.35 : 1.0) *
-      (sp('fury') ? 1.25 : 1.0);
+      (sp('fury') ? 1.25 : 1.0) *
+      curStance.dmg;
   double get fireMult =>
       1.25 * // 기본 공속 상향(속도감·정신없는 탄막)
       (1 + 0.10 * rageLv + denVal('as') + 0.01 * gearStat('as') + 0.01 * portraitBonus('as') + devourAs) *
       (berserkT > 0 ? 1.6 : 1.0) *
-      (sp('haste') ? 1.3 : 1.0);
+      (sp('haste') ? 1.3 : 1.0) *
+      curStance.asp;
   // 받는 피해 배수 — 특수기(강철 가죽) + 소굴 요새. 0.35 밑으로는 안 내려가게(밸런스).
   double get armorMult => ((sp('armor') ? 0.78 : 1.0) * (1 - denVal('armor'))).clamp(0.35, 1.0);
   // 경험치 배수 — 스테이지 보너스 + 소굴 지혜의 굴
-  double get xpMult => (1.0 + (stage - 1) * 0.1) * (1 + denVal('xp')) * curseReward;
+  double get xpMult => (1.0 + (stage - 1) * 0.1) * (1 + denVal('xp')) * curseReward * curStance.greed;
   bool get rageReady => rage >= rageMax;
 
   void toggleMute() => sfx.muted = !sfx.muted;
@@ -1688,7 +1717,7 @@ class World {
       }
       final rr = pr + 5;
       if ((b.x - px) * (b.x - px) + (b.y - py) * (b.y - py) <= rr * rr) {
-        hp -= b.dmg * armorMult * curseEnemyDmg;
+        hp -= b.dmg * incomingMult;
         b.dead = true;
         contactCdView = 0.12;
         _hapticHit = true;
@@ -1838,7 +1867,7 @@ class World {
     for (final e in enemies) {
       final rr = e.radius + pr;
       if ((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py) <= rr * rr) {
-        hp -= e.dmg * dt * armorMult * curseEnemyDmg; // 접촉 피해(diff·시련으로 커져 위협)
+        hp -= e.dmg * dt * incomingMult; // 접촉 피해(diff·시련으로 커져 위협)
         contactCdView = 0.12;
         _hapticHit = true;
         _shakeAdd(3);
@@ -1891,7 +1920,7 @@ class World {
           const er = 72.0;
           final ed = (16 + scaleT * 0.1) * diff;
           final pd = sqrt((px - e.x) * (px - e.x) + (py - e.y) * (py - e.y));
-          if (pd < er + pr) hp -= ed * armorMult * curseEnemyDmg;
+          if (pd < er + pr) hp -= ed * incomingMult;
           pulses.add(Pulse(e.x, e.y, er, 0.4, P.red));
           _float(e.x, e.y - e.radius, '폭발!', P.red, 16);
           _shakeAdd(6);
@@ -2303,6 +2332,7 @@ class World {
       final dn = (j['den'] as Map?) ?? {};
       dn.forEach((k, v) => den[k as String] = v as int);
       curses.addAll(((j['curses'] as List?) ?? []).map((e) => e as String));
+      stance = j['stance'] as String? ?? 'balanced';
       achieved.addAll(((j['ach'] as List?) ?? []).map((e) => e as String));
       ownedSkins.addAll(((j['skins'] as List?) ?? []).map((e) => e as String));
       skin = j['skin'] as String? ?? 'default';
@@ -2331,6 +2361,7 @@ class World {
         'up': meta,
         'den': den,
         'curses': curses.toList(),
+        'stance': stance,
         'ach': achieved.toList(),
         'skins': ownedSkins.toList(),
         'skin': skin,
@@ -2512,6 +2543,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.shop) _shopOverlay(),
             if (world.phase == GPhase.den) _denOverlay(),
             if (world.phase == GPhase.curse) _curseOverlay(),
+            if (world.phase == GPhase.stance) _stanceOverlay(),
             if (world.phase == GPhase.achieve) _achieveOverlay(),
             if (world.phase == GPhase.skins) _skinsOverlay(),
             if (world.phase == GPhase.status) _statusOverlay(),
@@ -3110,7 +3142,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             right: 0,
             bottom: 8,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              _curseChipButton(),
+              Wrap(spacing: 7, runSpacing: 6, alignment: WrapAlignment.center, children: [
+                _stanceChipButton(),
+                _curseChipButton(),
+              ]),
               const SizedBox(height: 7),
               if (world.maxStage > 1) _stageStepper(),
               if (world.maxStage > 1) const SizedBox(height: 8),
@@ -3204,6 +3239,26 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         ],
       ),
     ]);
+  }
+
+  // 출격 태세 진입 칩 — 현재 태세 표시
+  Widget _stanceChipButton() {
+    final s = world.curStance;
+    final active = s.id != 'balanced';
+    return GestureDetector(
+      onTap: () => setState(() => world.phase = GPhase.stance),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? P.gold.withOpacity(0.16) : Colors.black.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: active ? P.gold.withOpacity(0.8) : P.line),
+        ),
+        child: Text('${s.icon} ${s.name}',
+            style: TextStyle(
+                color: active ? P.gold : P.muted, fontSize: 12.5, fontWeight: FontWeight.bold)),
+      ),
+    );
   }
 
   // 시련 진입 칩 — 활성 개수 + 보상 배수 표시(출격 전 자율 난이도 설정)
@@ -3495,6 +3550,52 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                         : null,
                   ),
                 ]),
+              ]),
+            ),
+          ),
+        );
+      }),
+    ], GPhase.title);
+  }
+
+  // ── 출격 태세(천부) — 상호배타 1택, 장점+단점 ──
+  Widget _stanceOverlay() {
+    return _ovl('🎯', '출격 태세', [
+      const Padding(
+        padding: EdgeInsets.fromLTRB(2, 0, 2, 8),
+        child: Text('하나만 고른다. 장점엔 대가가 따른다 — 어떤 시련·빌드와 맞물릴지가 전략.',
+            style: TextStyle(color: P.muted, fontSize: 11.5, height: 1.35)),
+      ),
+      ...kStances.map((s) {
+        final on = world.stance == s.id;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 9),
+          child: GestureDetector(
+            onTap: () => setState(() {
+              world.stance = s.id;
+              world._saveMeta();
+            }),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              decoration: BoxDecoration(
+                color: on ? P.gold.withOpacity(0.16) : P.panel,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: on ? P.gold : P.line, width: on ? 2 : 1),
+              ),
+              child: Row(children: [
+                Text(s.icon, style: const TextStyle(fontSize: 28)),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(s.name,
+                        style: TextStyle(
+                            color: on ? P.gold : P.parch, fontSize: 15, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text(s.desc, style: const TextStyle(color: P.muted, fontSize: 11.5, height: 1.3)),
+                  ]),
+                ),
+                if (on)
+                  const Icon(Icons.check_circle, color: P.gold, size: 22),
               ]),
             ),
           ),
