@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-5';
+const String kSaveVer = 'v2026.06.13-6';
 
 void main() => runApp(const SurvivorApp());
 
@@ -485,6 +485,7 @@ class World {
   //  → 높은 스테이지에서 시작하면 "그 스테이지까지 플레이한 상태"와 동일한 강함으로 시작.
   double _headStart = 0;
   double get scaleT => time + _headStart;
+  double titleClock = 0; // 타이틀(메인) 배경·로고 애니메이션용 시계
   int kills = 0;
   int _mileShown = 0; // 생존 마일스톤 연출 카운터
   // ── 게임필(juice) — 검증된 기법: 크리티컬·히트스톱·콤보·스크린플래시 ──
@@ -2257,8 +2258,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     sw.stop();
     world.updMs = world.updMs * 0.9 + sw.elapsedMicroseconds / 1000.0 * 0.1; // update 소요(ms)
     world.consumeHaptics();
-    // 성능: 플레이 중·각성 컷신 중에는 매 프레임 리페인트. 그 외 화면은 상태 변화 시에만.
-    if (mounted && (wasPlaying || world.phase == GPhase.morph || world.phase != _lastPhase)) {
+    if (world.phase == GPhase.title) world.titleClock += dt; // 메인화면 애니메이션
+    // 성능: 플레이·각성·메인화면은 매 프레임 리페인트. 그 외 화면은 상태 변화 시에만.
+    final anim = wasPlaying || world.phase == GPhase.morph || world.phase == GPhase.title;
+    if (mounted && (anim || world.phase != _lastPhase)) {
       setState(() {});
     }
     _lastPhase = world.phase;
@@ -2500,6 +2503,40 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
+  // 메인화면 프리미엄 CTA — 금빛 그라데이션 + 맥동 발광
+  Widget _ctaButton(String t, VoidCallback onTap) {
+    final pulse = 0.5 + 0.5 * sin(world.titleClock * 2.2);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 290,
+        padding: const EdgeInsets.symmetric(vertical: 17),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFFF7D58A), P.gold, Color(0xFFCE7A22)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.55), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+                color: P.gold.withOpacity(0.30 + 0.30 * pulse),
+                blurRadius: 16 + 12 * pulse,
+                spreadRadius: 1),
+          ],
+        ),
+        child: Text(t,
+            style: const TextStyle(
+                color: Color(0xFF2A1B06),
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1)),
+      ),
+    );
+  }
+
   // 통일 액션 버튼 (full/expanded용). primary=강조(밝은색), 아니면 패널 테두리.
   Widget _actBtn(String t, Color c, bool primary, VoidCallback onTap) => Material(
         color: primary ? c : P.panel,
@@ -2734,12 +2771,39 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(height: 8),
-          const Text('어흥 : 야수의 생존',
-              style: TextStyle(
-                  color: P.gold, fontSize: 27, fontWeight: FontWeight.bold, letterSpacing: 2)),
+          const SizedBox(height: 14),
+          // ── 히어로 메달리온 (호랑이 아바타, 숨쉬는 애니메이션) ──
+          SizedBox(
+            width: 168,
+            height: 168,
+            child: CustomPaint(painter: HeroPainter(world.titleClock)),
+          ),
+          const SizedBox(height: 6),
+          // ── 로고 ──
+          ShaderMask(
+            shaderCallback: (r) => const LinearGradient(
+              colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ).createShader(r),
+            child: const Text('어 흥',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 52,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 6,
+                    height: 1.0,
+                    shadows: [
+                      Shadow(color: Color(0xCCB7402E), blurRadius: 18),
+                      Shadow(color: Colors.black, blurRadius: 6),
+                    ])),
+          ),
+          const SizedBox(height: 2),
+          Text(sel.name,
+              style: const TextStyle(
+                  color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1)),
           if (world.prestige > 0) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
@@ -2751,15 +2815,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   style: const TextStyle(color: P.purple, fontSize: 12, fontWeight: FontWeight.bold)),
             ),
           ],
-          const SizedBox(height: 10),
-          const Text('그림자 의회가 네 둥지를 불태우고 무리를 끌고 갔다.\n살아남은 건 너 하나. 이제 — 사냥의 시간이다.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: P.parch, fontSize: 13, height: 1.6)),
-          const SizedBox(height: 6),
-          const Text('드래그로 이동 · 공격 자동 · 광기가 차면 [어흥!]',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: P.muted, fontSize: 12)),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           // 📢 공지·이벤트 (메인 로비)
           SizedBox(
             width: 300,
@@ -2783,32 +2839,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ]),
           ),
           const SizedBox(height: 16),
-          // 단일 주인공 — 호랑이가 되고 싶은 양 (사냥할수록 호랑이로 변신)
-          Container(
-            width: 230,
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-            decoration: BoxDecoration(
-              color: sel.color.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: sel.color, width: 2),
-            ),
-            child: Column(children: [
-              const Text('🐑  →  🐯', style: TextStyle(fontSize: 26)),
-              const SizedBox(height: 6),
-              Text(sel.name,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Text(sel.desc,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: P.parch, fontSize: 12, height: 1.4)),
-            ]),
-          ),
-          const SizedBox(height: 14),
           _startStagePicker(),
-          const SizedBox(height: 12),
-          _bigBtn(world.maxStage > 1 ? '⚔  STAGE ${world.startStage} 생존 시작' : '⚔  생존 시작',
-              sel.color, () => setState(() => world.startGame(atStage: world.startStage))),
+          const SizedBox(height: 14),
+          // 프리미엄 CTA — 발광·맥동
+          _ctaButton(world.maxStage > 1 ? '⚔  STAGE ${world.startStage}  생존 시작' : '⚔  생 존  시 작',
+              () => setState(() => world.startGame(atStage: world.startStage))),
           const SizedBox(height: 16),
           // 통일 허브 그리드 (단련/장비/창고/업적/무늬/설정)
           SizedBox(width: 320, child: _hubGrid(from: GPhase.title)),
@@ -4248,6 +4283,14 @@ class WorldPainter extends CustomPainter {
     _motes(canvas, lsize, th[3]);
 
     if (w.phase == GPhase.title) {
+      // 메인화면 프리미엄 배경 — 상단 큰 금빛 발광 펄스(로고 뒤) + 하단 둥지 실루엣 느낌
+      final tc = w.titleClock;
+      final gx = lsize.width / 2, gy = lsize.height * 0.26;
+      final pulse = 0.5 + 0.5 * sin(tc * 1.1);
+      canvas.drawCircle(Offset(gx, gy), lsize.width * (0.55 + 0.05 * pulse),
+          Paint()..color = P.gold.withOpacity(0.05 + 0.03 * pulse));
+      canvas.drawCircle(
+          Offset(gx, gy), lsize.width * 0.34, Paint()..color = P.gold.withOpacity(0.06));
       canvas.restore();
       return;
     }
@@ -4433,10 +4476,12 @@ class WorldPainter extends CustomPainter {
   // 부유 모트 — 테마색의 입자가 천천히 떠오름(살아있는 배경, 단조로움 해소). 상태 없이 time 기반.
   void _motes(Canvas canvas, Size size, Color col) {
     if (size.width <= 0 || size.height <= 0) return;
+    final clk = w.phase == GPhase.title ? w.titleClock : w.time; // 메인화면도 애니메이션
     final p = Paint()..color = col;
-    for (int i = 0; i < 18; i++) {
-      final x = (i * 71.0 + sin(w.time * 0.4 + i) * 16) % size.width;
-      final y = (i * 47.0 + w.time * (10 + (i % 4) * 6.0)) % size.height;
+    final n = w.phase == GPhase.title ? 26 : 18; // 메인화면은 입자 더 풍성하게
+    for (int i = 0; i < n; i++) {
+      final x = (i * 71.0 + sin(clk * 0.4 + i) * 16) % size.width;
+      final y = (i * 47.0 + clk * (10 + (i % 4) * 6.0)) % size.height;
       canvas.drawCircle(Offset(x, size.height - y), 1.2 + (i % 3) * 0.8, p);
     }
   }
@@ -4883,4 +4928,124 @@ class MorphPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant MorphPainter old) => true;
+}
+
+// =============================================================================
+//  메인화면 히어로 메달리온 — 숨쉬는 호랑이 아바타 + 회전 후광 (전부 코드)
+// =============================================================================
+class HeroPainter extends CustomPainter {
+  final double t;
+  HeroPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2, cy = size.height / 2;
+    final breathe = 1 + sin(t * 2) * 0.025;
+    final r = size.width * 0.30 * breathe;
+    const col = P.gold;
+    const stripe = Color(0xFF3A2606);
+    // 회전 후광 빛줄기
+    for (int i = 0; i < 16; i++) {
+      final a = t * 0.6 + i * 6.2831853 / 16;
+      final l = r * (0.5 + 0.12 * sin(t * 3 + i));
+      canvas.drawLine(
+          Offset(cx + cos(a) * r * 1.3, cy + sin(a) * r * 1.3),
+          Offset(cx + cos(a) * (r * 1.3 + l), cy + sin(a) * (r * 1.3 + l)),
+          Paint()
+            ..color = P.gold.withOpacity(0.10)
+            ..strokeWidth = 3
+            ..strokeCap = StrokeCap.round);
+    }
+    // 발광 디스크 프레임
+    canvas.drawCircle(Offset(cx, cy), r * 1.7, Paint()..color = P.gold.withOpacity(0.10));
+    canvas.drawCircle(Offset(cx, cy), r * 1.28, Paint()..color = const Color(0xFF1A1410));
+    canvas.drawCircle(
+        Offset(cx, cy),
+        r * 1.28,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..color = P.gold.withOpacity(0.7));
+    // 귀
+    final ears = Path()
+      ..moveTo(cx - r * 0.85, cy - r * 0.5)
+      ..lineTo(cx - r * 0.45, cy - r * 1.3)
+      ..lineTo(cx - r * 0.05, cy - r * 0.65)
+      ..close()
+      ..moveTo(cx + r * 0.85, cy - r * 0.5)
+      ..lineTo(cx + r * 0.45, cy - r * 1.3)
+      ..lineTo(cx + r * 0.05, cy - r * 0.65)
+      ..close();
+    canvas.drawPath(ears, Paint()..color = col);
+    // 얼굴
+    canvas.drawCircle(Offset(cx, cy), r, Paint()..color = col);
+    canvas.drawCircle(
+        Offset(cx, cy),
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..color = Colors.white.withOpacity(0.85));
+    // 줄무늬
+    final st = Paint()
+      ..color = stripe
+      ..strokeWidth = r * 0.09
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(cx - r * 0.5, cy - r * 0.55), Offset(cx - r * 0.2, cy - r * 0.2), st);
+    canvas.drawLine(Offset(cx + r * 0.5, cy - r * 0.55), Offset(cx + r * 0.2, cy - r * 0.2), st);
+    canvas.drawLine(Offset(cx, cy - r * 0.72), Offset(cx, cy - r * 0.36), st);
+    canvas.drawLine(Offset(cx - r * 0.72, cy + r * 0.1), Offset(cx - r * 0.42, cy + r * 0.16), st);
+    canvas.drawLine(Offset(cx + r * 0.72, cy + r * 0.1), Offset(cx + r * 0.42, cy + r * 0.16), st);
+    // 볼터치(귀여움)
+    final blush = Paint()..color = const Color(0xFFFF8E8E).withOpacity(0.4);
+    canvas.drawCircle(Offset(cx - r * 0.55, cy + r * 0.28), r * 0.15, blush);
+    canvas.drawCircle(Offset(cx + r * 0.55, cy + r * 0.28), r * 0.15, blush);
+    // 눈(깜빡)
+    final ey = cy - r * 0.05;
+    final dark = Paint()..color = const Color(0xFF160F06);
+    final blink = (t % 3.4) < 0.13;
+    if (blink) {
+      final lid = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = r * 0.1
+        ..strokeCap = StrokeCap.round
+        ..color = dark.color;
+      canvas.drawLine(Offset(cx - r * 0.56, ey), Offset(cx - r * 0.2, ey), lid);
+      canvas.drawLine(Offset(cx + r * 0.2, ey), Offset(cx + r * 0.56, ey), lid);
+    } else {
+      canvas.drawCircle(Offset(cx - r * 0.38, ey), r * 0.2, dark);
+      canvas.drawCircle(Offset(cx + r * 0.38, ey), r * 0.2, dark);
+      final hi = Paint()..color = Colors.white.withOpacity(0.9);
+      canvas.drawCircle(Offset(cx - r * 0.44, ey - r * 0.07), r * 0.07, hi);
+      canvas.drawCircle(Offset(cx + r * 0.32, ey - r * 0.07), r * 0.07, hi);
+    }
+    // 사나운 눈썹
+    final brow = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = r * 0.09
+      ..strokeCap = StrokeCap.round
+      ..color = stripe;
+    canvas.drawLine(Offset(cx - r * 0.56, ey - r * 0.34), Offset(cx - r * 0.22, ey - r * 0.16), brow);
+    canvas.drawLine(Offset(cx + r * 0.56, ey - r * 0.34), Offset(cx + r * 0.22, ey - r * 0.16), brow);
+    // 코
+    canvas.drawCircle(Offset(cx, cy + r * 0.32), r * 0.1, dark);
+    // 송곳니
+    final fang = Paint()..color = Colors.white;
+    final ny = cy + r * 0.42;
+    final f1 = Path()
+      ..moveTo(cx - r * 0.18, ny)
+      ..lineTo(cx - r * 0.06, ny)
+      ..lineTo(cx - r * 0.12, ny + r * 0.26)
+      ..close();
+    final f2 = Path()
+      ..moveTo(cx + r * 0.18, ny)
+      ..lineTo(cx + r * 0.06, ny)
+      ..lineTo(cx + r * 0.12, ny + r * 0.26)
+      ..close();
+    canvas.drawPath(f1, fang);
+    canvas.drawPath(f2, fang);
+  }
+
+  @override
+  bool shouldRepaint(covariant HeroPainter old) => true;
 }
