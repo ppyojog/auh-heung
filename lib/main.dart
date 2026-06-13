@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-4';
+const String kSaveVer = 'v2026.06.13-5';
 
 void main() => runApp(const SurvivorApp());
 
@@ -837,6 +837,20 @@ class World {
   int fangs = 0;
   final Map<String, int> meta = {};
   int runFangs = 0; // 이번 런에서 번 송곳니(사망 화면 표시)
+  // 환생(Prestige) — 100시간 성장 루프: 강화·송곳니를 리셋하는 대신 영구 배수 획득.
+  int prestige = 0;
+  double get prestigeMult => 1 + prestige * 0.12; // 환생당 공격·체력 +12%
+  double get prestigeFangMult => 1 + prestige * 0.15; // 환생당 송곳니 획득 +15%
+  bool get canPrestige => maxStage >= 10 + prestige * 5; // 요구 스테이지 점점 상승
+  int get nextPrestigeStage => 10 + prestige * 5;
+
+  void doPrestige() {
+    if (!canPrestige) return;
+    prestige += 1;
+    fangs = 0;
+    meta.clear();
+    _saveMeta();
+  }
 
   int metaLv(String id) => meta[id] ?? 0;
   int metaCost(String id) {
@@ -935,7 +949,9 @@ class World {
 
   // ── 파생 스탯 (캐릭터 배수 + 광폭화 + 영구강화(meta) + 장비 + 초상화 진급 반영) ──
   double get maxHp =>
-      (baseMaxHp + 25 * hideLv + 15 * metaLv('hp') + gearStat('hp') + portraitBonus('hp')) * charHp;
+      (baseMaxHp + 25 * hideLv + 15 * metaLv('hp') + gearStat('hp') + portraitBonus('hp')) *
+      charHp *
+      prestigeMult;
   double get speed =>
       baseSpeed *
       (1 + 0.10 * windLv + 0.04 * metaLv('spd') + 0.01 * gearStat('spd') + 0.01 * portraitBonus('spd')) *
@@ -952,6 +968,7 @@ class World {
       (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + 0.01 * gearStat('dmg') + 0.01 * portraitBonus('dmg') + devourAtk) *
       charDmg *
       comboDmg *
+      prestigeMult *
       (berserkT > 0 ? 1.35 : 1.0) *
       (sp('fury') ? 1.25 : 1.0);
   double get fireMult =>
@@ -2015,7 +2032,8 @@ class World {
     if (time > bestTime) bestTime = time;
     if (kills > bestKills) bestKills = kills;
     // 전리품 적립 — 죽음이 헛되지 않게(플레이한 만큼 보상)
-    runFangs = ((kills + time.floor() + level * 8) * (1 + 0.12 * metaLv('gain'))).round();
+    runFangs =
+        ((kills + time.floor() + level * 8) * (1 + 0.12 * metaLv('gain')) * prestigeFangMult).round();
     fangs += runFangs;
     _evalAchievements();
     _saveRecords();
@@ -2072,6 +2090,7 @@ class World {
     ownedGear.clear();
     equipped.clear();
     startStage = 1;
+    prestige = 0;
     _loadRecords();
     _loadMeta();
     _checkDaily();
@@ -2137,6 +2156,7 @@ class World {
       skin = j['skin'] as String? ?? 'default';
       lastDaily = j['daily'] as String? ?? '';
       maxStage = (j['maxst'] as int?) ?? 1;
+      prestige = (j['prestige'] as int?) ?? 0;
       ownedGear.addAll(((j['gear'] as List?) ?? []).map((e) => e as String));
       final eq = (j['equip'] as Map?) ?? {};
       eq.forEach((k, v) {
@@ -2160,6 +2180,7 @@ class World {
         'skin': skin,
         'daily': lastDaily,
         'maxst': maxStage,
+        'prestige': prestige,
         'gear': ownedGear.toList(),
         'equip': eq,
       });
@@ -2636,6 +2657,74 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
+  // 환생(Prestige) 카드 — 단련 화면 상단. 100시간 성장 루프.
+  Widget _prestigeCard() {
+    final w = world;
+    final can = w.canPrestige;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: P.purple.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: P.purple.withOpacity(0.7)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text('🌀 환생  ×${w.prestige}',
+              style: const TextStyle(color: P.purple, fontSize: 15, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          Text('영구 공격·체력 +${(w.prestige * 12)}% · 송곳니 +${(w.prestige * 15)}%',
+              style: const TextStyle(color: P.goldSoft, fontSize: 11, fontWeight: FontWeight.bold)),
+        ]),
+        const SizedBox(height: 6),
+        const Text('환생하면 강화·송곳니를 리셋하는 대신, 영구 배수(공격·체력 +12% · 송곳니 +15%)를 얻습니다. 끝없이 강해지세요.',
+            style: TextStyle(color: P.parch, fontSize: 11.5, height: 1.35)),
+        const SizedBox(height: 10),
+        can
+            ? _actBtn('🌀  환생하기  (영구 +12% 획득)', P.purple, true, _confirmPrestige)
+            : Container(
+                width: double.infinity,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: P.line),
+                ),
+                child: Text('STAGE ${w.nextPrestigeStage} 도달 시 환생 가능 (현재 최고 ${w.maxStage})',
+                    style: const TextStyle(color: P.muted, fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+      ]),
+    );
+  }
+
+  void _confirmPrestige() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: P.panel,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('환생', style: TextStyle(color: P.purple, fontWeight: FontWeight.bold)),
+        content: const Text(
+            '강화 레벨과 보유 송곳니가 모두 초기화됩니다.\n대신 영구 배수(공격·체력 +12% · 송곳니 획득 +15%)를 얻습니다.\n\n환생할까요?',
+            style: TextStyle(color: P.muted, fontSize: 13, height: 1.4)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('취소', style: TextStyle(color: P.muted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              setState(() => world.doPrestige());
+            },
+            child: const Text('환생', style: TextStyle(color: P.purple, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── 타이틀 ──
   Widget _title() {
     final sel = kChars[world.charIndex.clamp(0, kChars.length - 1)];
@@ -2649,6 +2738,19 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           const Text('어흥 : 야수의 생존',
               style: TextStyle(
                   color: P.gold, fontSize: 27, fontWeight: FontWeight.bold, letterSpacing: 2)),
+          if (world.prestige > 0) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: P.purple.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: P.purple.withOpacity(0.7)),
+              ),
+              child: Text('🌀 환생 ×${world.prestige}  ·  영구 +${world.prestige * 12}%',
+                  style: const TextStyle(color: P.purple, fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
+          ],
           const SizedBox(height: 10),
           const Text('그림자 의회가 네 둥지를 불태우고 무리를 끌고 갔다.\n살아남은 건 너 하나. 이제 — 사냥의 시간이다.',
               textAlign: TextAlign.center,
@@ -2664,70 +2766,23 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             child: _actBtn('📢  공지 · 이벤트', P.cyan, false,
                 () => setState(() => world.phase = GPhase.notice)),
           ),
-          const SizedBox(height: 18),
-          const Text('세이브 슬롯',
-              style: TextStyle(color: P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(3, (i) {
-              final n = i + 1;
-              final on = world.slot == n;
-              final info = world.slotInfo(n);
-              return Stack(children: [
-                GestureDetector(
-                  onTap: () => setState(() => world.selectSlot(n)),
-                  child: Container(
-                    width: 98,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    padding: const EdgeInsets.fromLTRB(5, 9, 5, 9),
-                    decoration: BoxDecoration(
-                      color: on ? P.gold.withOpacity(0.16) : Colors.black.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(11),
-                      border: Border.all(color: on ? P.gold : P.line, width: on ? 2 : 1),
-                    ),
-                    child: Column(children: [
-                      Text('슬롯 $n',
-                          style: TextStyle(
-                              color: on ? Colors.white : P.muted,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 3),
-                      Text(
-                          info == null
-                              ? '빈 슬롯'
-                              : '🦷${info['fangs']}\n최고 ${World.mmss((info['bt'] as num).toDouble())}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: P.muted, fontSize: 10, height: 1.3)),
-                    ]),
-                  ),
-                ),
-                // 세이브 삭제 (데이터 있는 슬롯만) — 두 번 눌러 확인
-                if (info != null)
-                  Positioned(
-                    top: 2,
-                    right: 6,
-                    child: GestureDetector(
-                      onTap: () => _confirmDeleteSlot(n),
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: P.blood.withOpacity(0.9),
-                          border: Border.all(color: Colors.white.withOpacity(0.6)),
-                        ),
-                        child: const Text('✕',
-                            style: TextStyle(
-                                color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ),
-              ]);
-            }),
+          const SizedBox(height: 16),
+          // 자동 저장 단일 프로필 요약(슬롯 없음 — 자동 저장)
+          Container(
+            width: 300,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: P.panel,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: P.line),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+              _miniStat('🦷 송곳니', '${world.fangs}', P.goldSoft),
+              _miniStat('최고 기록', world.bestTime > 0 ? World.mmss(world.bestTime) : '–', P.gold),
+              _miniStat('최고 STAGE', '${world.maxStage}', P.cyan),
+            ]),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           // 단일 주인공 — 호랑이가 되고 싶은 양 (사냥할수록 호랑이로 변신)
           Container(
             width: 230,
@@ -2749,10 +2804,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   style: const TextStyle(color: P.parch, fontSize: 12, height: 1.4)),
             ]),
           ),
-          const SizedBox(height: 10),
-          if (world.bestTime > 0)
-            Text('최고 기록 ${World.mmss(world.bestTime)} · ${world.bestKills}킬',
-                style: const TextStyle(color: P.muted, fontSize: 12)),
           const SizedBox(height: 14),
           _startStagePicker(),
           const SizedBox(height: 12),
@@ -2774,8 +2825,46 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   style: TextStyle(color: P.goldSoft, fontSize: 12.5, fontWeight: FontWeight.bold)),
             ),
           ],
+          const SizedBox(height: 18),
+          // [테스트] 세이브 초기화 — 자동저장이라 슬롯은 없고, 테스트용 전체 초기화만 제공
+          GestureDetector(
+            onTap: _confirmReset,
+            child: Text('🗑  세이브 초기화 (테스트)',
+                style: TextStyle(
+                    color: P.muted.withOpacity(0.8),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    decoration: TextDecoration.underline)),
+          ),
           const SizedBox(height: 16),
         ]),
+      ),
+    );
+  }
+
+  // 세이브 전체 초기화(테스트) — 현재 자동저장 프로필 삭제
+  void _confirmReset() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: P.panel,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('세이브 초기화', style: TextStyle(color: P.parch, fontWeight: FontWeight.bold)),
+        content: const Text('송곳니·강화·장비·업적·환생·기록이 모두 사라집니다.\n되돌릴 수 없습니다. 초기화할까요?',
+            style: TextStyle(color: P.muted, fontSize: 13, height: 1.4)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('취소', style: TextStyle(color: P.muted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              setState(() => world.deleteSlot(world.slot));
+            },
+            child: const Text('초기화', style: TextStyle(color: P.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }
@@ -2795,7 +2884,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              children: kMeta.map((m) {
+              children: [
+                _prestigeCard(),
+                const SizedBox(height: 10),
+                ...kMeta.map((m) {
                 final lv = world.metaLv(m.id);
                 final maxed = lv >= m.maxLv;
                 final cost = world.metaCost(m.id);
@@ -2851,7 +2943,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     ]),
                   ),
                 );
-              }).toList(),
+              }),
+              ],
             ),
           ),
           _backBar(world.shopReturn),
