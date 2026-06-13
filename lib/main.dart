@@ -375,7 +375,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, travel, options }
+enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, travel, options, diag }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -463,6 +463,8 @@ class World {
   // 배경 그라데이션 셰이더 캐시(매 프레임 재생성 방지 — 성능)
   Shader? bgShader;
   String bgKey = '';
+  // 성능 진단 측정값(ms, 이동평균)
+  double updMs = 0, paintMs = 0;
 
   double get critChance => 0.12; // 크리 확률(추후 장비/메타 확장 여지)
   double get comboDmg => 1.0 + (combo > 60 ? 60 : combo) * 0.004; // 콤보 공격 보너스(최대 +24%)
@@ -1637,7 +1639,10 @@ class World {
         }
         // 엘리트 처치 — 확정 보상(파워업 픽업 + 송곳니) + 큰 연출
         if (e.elite) {
-          pickups.add(Pickup(e.x, e.y, PickType.values[rng.nextInt(PickType.values.length)]));
+          if (pickups.length < 8) {
+            pickups.add(Pickup(e.x.clamp(16.0, w - 16), e.y.clamp(16.0, h - 16),
+                PickType.values[rng.nextInt(PickType.values.length)]));
+          }
           fangs += 8;
           runFangs += 8;
           devour += 6;
@@ -2115,7 +2120,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _last = elapsed;
     if (dt > 0.0001) _fps = _fps * 0.9 + (1.0 / dt) * 0.1; // FPS 이동평균(진단)
     final wasPlaying = world.phase == GPhase.playing;
+    final sw = Stopwatch()..start();
     world.update(dt);
+    sw.stop();
+    world.updMs = world.updMs * 0.9 + sw.elapsedMicroseconds / 1000.0 * 0.1; // update 소요(ms)
     world.consumeHaptics();
     // 성능: 플레이 중에만 매 프레임 리페인트. 메뉴/정지 화면은 상태 변화(탭·전환) 시에만.
     if (mounted && (wasPlaying || world.phase != _lastPhase)) setState(() {});
@@ -2165,6 +2173,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.phase == GPhase.inventory) _inventoryOverlay(),
             if (world.phase == GPhase.travel) _travelOverlay(),
             if (world.phase == GPhase.options) _optionsOverlay(),
+            if (world.phase == GPhase.diag) _diagOverlay(),
             if (world.phase == GPhase.menu) _menuOverlay(),
             if (world.phase == GPhase.levelup) _levelUp(),
             if (world.phase == GPhase.dead) _death(),
@@ -2225,7 +2234,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             borderRadius: BorderRadius.circular(6),
           ),
           child: Text(
-            '$fps fps  적${w.enemies.length} 탄${w.bullets.length} 구${w.orbs.length} '
+            '$fps fps  up${w.updMs.toStringAsFixed(1)} pt${w.paintMs.toStringAsFixed(1)}ms\n'
+            '적${w.enemies.length} 탄${w.bullets.length} 구${w.orbs.length} 픽${w.pickups.length} '
             '입${w.parts.length} 펄${w.pulses.length} 적탄${w.eBullets.length}',
             style: TextStyle(
                 color: col, fontSize: 10, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
@@ -3053,6 +3063,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 world.optPerf = !world.optPerf;
                 world.saveOpts();
               })),
+          const SizedBox(height: 6),
+          SizedBox(
+              width: 300,
+              child: _actBtn('🔬  진단 로그 (복사)', P.cyan, false,
+                  () => setState(() => world.phase = GPhase.diag))),
           const SizedBox(height: 8),
           // 조이스틱 위치
           Container(
@@ -3144,6 +3159,72 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               style: TextStyle(
                   color: on ? Colors.black : P.parch, fontSize: 12.5, fontWeight: FontWeight.bold)),
         ),
+      ),
+    );
+  }
+
+  // ── 진단 로그 — 상세 성능/기기 정보 + 텍스트 복사 ──
+  String _diagText() {
+    final w = world;
+    String ua = '';
+    double dpr = 1;
+    int iw = 0, ih = 0;
+    try {
+      ua = html.window.navigator.userAgent;
+      dpr = html.window.devicePixelRatio.toDouble();
+      iw = html.window.innerWidth ?? 0;
+      ih = html.window.innerHeight ?? 0;
+    } catch (_) {}
+    final pw = (iw * dpr).round(), ph = (ih * dpr).round();
+    return '[어흥 진단]\n'
+        'fps ${_fps.toStringAsFixed(1)} | update ${w.updMs.toStringAsFixed(2)}ms | paint ${w.paintMs.toStringAsFixed(2)}ms\n'
+        'phase ${w.phase.name} stage ${w.stage} t ${w.time.toStringAsFixed(0)}s lv ${w.level} combo ${w.combo}\n'
+        '엔티티: 적 ${w.enemies.length} / 탄 ${w.bullets.length} / 적탄 ${w.eBullets.length} / 구슬 ${w.orbs.length} / 픽업 ${w.pickups.length} / 입자 ${w.parts.length} / 펄스 ${w.pulses.length} / 플로트 ${w.floats.length}\n'
+        '화면 ${iw}x$ih DPR ${dpr.toStringAsFixed(2)} 물리 ${pw}x$ph | zoom $kZoom | renderer html\n'
+        'UA $ua';
+  }
+
+  void _copyDiag() {
+    try {
+      Clipboard.setData(ClipboardData(text: _diagText())); // flutter/services — 웹 호환
+    } catch (_) {}
+  }
+
+  Widget _diagOverlay() {
+    return Container(
+      color: const Color(0xF20A0806),
+      child: SafeArea(
+        child: Column(children: [
+          _ohead('🔬', '진단 로그', fangs: false),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: P.line),
+                ),
+                child: SelectableText(
+                  _diagText(),
+                  style: const TextStyle(
+                      color: P.parch, fontSize: 11.5, height: 1.5, fontFamily: 'monospace'),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+            child: _actBtn('📋  텍스트 복사', P.gold, true, () {
+              _copyDiag();
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('진단 로그를 복사했습니다'), duration: Duration(seconds: 1)));
+            }),
+          ),
+          _backBar(GPhase.options),
+        ]),
       ),
     );
   }
@@ -3698,8 +3779,24 @@ class WorldPainter extends CustomPainter {
     c.drawCircle(Offset(x, y), r, Paint()..color = col.withOpacity(core));
   }
 
+  // 이모지 TextPainter 캐시 — 매 프레임 layout() 비용 제거(웹에서 매우 비쌈). 고정 크기로 1회 레이아웃 후 재사용.
+  static final Map<String, TextPainter> _emojiCache = {};
+  TextPainter _emoji(String s, double size) {
+    final key = '$s|${size.round()}';
+    var tp = _emojiCache[key];
+    if (tp == null) {
+      tp = TextPainter(
+        text: TextSpan(text: s, style: TextStyle(fontSize: size)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      _emojiCache[key] = tp;
+    }
+    return tp;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
+    final _sw = Stopwatch()..start();
     final th = _themes[_ti];
     // 배경 — 화면 전체. 셰이더 캐시(크기·테마 동일하면 재사용 → 매 프레임 생성 비용 제거)
     final key = '${size.width.round()}x${size.height.round()}_$_ti';
@@ -3731,19 +3828,15 @@ class WorldPainter extends CustomPainter {
       canvas.drawCircle(Offset(o.x, o.y), 3.2, orbCore);
     }
 
-    // 바닥 파워업 픽업 (통통 튀는 발광 + 아이콘) — 눈에 띄게
+    // 바닥 파워업 픽업 — 발광 + 아이콘(이모지 캐시 사용, 매 프레임 layout 제거)
     for (final pk in w.pickups) {
       final col = pk.type == PickType.magnet
           ? P.cyan
           : (pk.type == PickType.bomb ? const Color(0xFFE8702E) : P.green);
       final ic = pk.type == PickType.magnet ? '🧲' : (pk.type == PickType.bomb ? '💣' : '❤');
-      final pulse = 1.0 + sin(w.time * 5 + pk.x) * 0.12;
-      final blink = pk.life < 3 ? (sin(w.time * 14) * 0.4 + 0.6) : 1.0; // 사라지기 직전 깜빡임
-      _glow(canvas, pk.x, pk.y, 11.0 * pulse, col, core: 0.5 * blink);
-      final tp = TextPainter(
-        text: TextSpan(text: ic, style: TextStyle(fontSize: 18 * pulse)),
-        textDirection: TextDirection.ltr,
-      )..layout();
+      final blink = pk.life < 3 ? (sin(w.time * 14) * 0.4 + 0.6) : 1.0;
+      _glow(canvas, pk.x, pk.y, 11.0, col, core: 0.5 * blink);
+      final tp = _emoji(ic, 18);
       tp.paint(canvas, Offset(pk.x - tp.width / 2, pk.y - tp.height / 2));
     }
 
@@ -3869,6 +3962,10 @@ class WorldPainter extends CustomPainter {
       canvas.drawRect(Offset.zero & size,
           Paint()..color = w.flashCol.withOpacity((w.flashT * 0.4).clamp(0.0, 0.32)));
     }
+
+    // 진단: 페인트 소요(ms) 기록
+    _sw.stop();
+    w.paintMs = w.paintMs * 0.9 + _sw.elapsedMicroseconds / 1000.0 * 0.1;
 
     // 방향키 — 옵션 위치. 기본=엄지존(가운데-오른쪽, 검증된 오른손 엄지 자연 위치). 노브는 진행 방향.
     if (w.phase != GPhase.playing) return;
@@ -3999,10 +4096,7 @@ class WorldPainter extends CustomPainter {
     final gc = hurt ? P.red : (happy ? P.gold : P.muted);
     canvas.drawCircle(Offset(x, y), happy ? 14 : 11,
         Paint()..color = gc.withOpacity(happy ? 0.28 : 0.14));
-    final tp = TextPainter(
-      text: TextSpan(text: face, style: const TextStyle(fontSize: 18)),
-      textDirection: TextDirection.ltr,
-    )..layout();
+    final tp = _emoji(face, 18); // 이모지 캐시(매 프레임 layout 제거)
     tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
 
     // 펫 말풍선 — 타이니가 직접 말함(상단 띄우기 대체). 긴 충신 대사도 줄바꿈 수용.
