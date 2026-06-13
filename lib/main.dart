@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-9';
+const String kSaveVer = 'v2026.06.13-10';
 
 void main() => runApp(const SurvivorApp());
 
@@ -3734,45 +3734,80 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       onTap: () => setState(() => world.dismissMorph()),
       child: Stack(children: [
         Positioned.fill(child: CustomPaint(painter: MorphPainter(world))),
-        // 이전 / 지금 라벨 (아바타 아래)
+        // 왼쪽(이전) 아바타 아래 — 이전 이름
         Align(
-          alignment: const Alignment(-0.46, 0.06),
+          alignment: const Alignment(-0.46, 0.12),
           child: Opacity(
             opacity: titleA * 0.8,
-            child: Text(prev.name,
-                style: const TextStyle(color: P.muted, fontSize: 11, fontWeight: FontWeight.bold)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('이전', style: TextStyle(color: P.muted, fontSize: 9)),
+              const SizedBox(height: 3),
+              Text(prev.name,
+                  style: const TextStyle(color: P.muted, fontSize: 12, fontWeight: FontWeight.bold)),
+            ]),
           ),
         ),
+        // 오른쪽(새) 아바타 아래 — NEW 태그 + 새 초상화 이름
         Align(
-          alignment: const Alignment(0.46, 0.06),
+          alignment: const Alignment(0.46, 0.10),
           child: Opacity(
             opacity: titleA,
-            child: const Text('NEW!',
-                style: TextStyle(color: P.gold, fontSize: 13, fontWeight: FontWeight.bold)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                    color: P.gold, borderRadius: BorderRadius.circular(20)),
+                child: const Text('NEW',
+                    style: TextStyle(
+                        color: Colors.black, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1)),
+              ),
+              const SizedBox(height: 4),
+              Text(pt.name,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: P.gold,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      shadows: [Shadow(color: P.blood.withOpacity(0.8), blurRadius: 8)])),
+            ]),
           ),
         ),
-        // 새 초상화 이름 (위)
+        // 상단 — 트렌디 'RANK UP / 진급' 배너
         Align(
-          alignment: const Alignment(0, -0.62),
+          alignment: const Alignment(0, -0.66),
           child: Transform.scale(
             scale: titlePop,
             child: Opacity(
               opacity: titleA,
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                const Text('— 진 급 —',
-                    style: TextStyle(color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 3)),
-                const SizedBox(height: 4),
-                Text(pt.name,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: P.gold,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                        shadows: [
-                          Shadow(color: P.blood.withOpacity(0.9), blurRadius: 16),
-                          const Shadow(color: Colors.black, blurRadius: 6),
-                        ])),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [Color(0xFFF7D58A), P.gold]),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text('R A N K   U P',
+                      style: TextStyle(
+                          color: Color(0xFF2A1B06), fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 2)),
+                ),
+                const SizedBox(height: 6),
+                ShaderMask(
+                  shaderCallback: (r) => const LinearGradient(
+                    colors: [Color(0xFFFCE7A8), P.gold, Color(0xFFCE7A22)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ).createShader(r),
+                  child: const Text('진  급',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 40,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 6,
+                          shadows: [
+                            Shadow(color: Color(0xCCB7402E), blurRadius: 16),
+                            Shadow(color: Colors.black, blurRadius: 6),
+                          ])),
+                ),
               ]),
             ),
           ),
@@ -4990,6 +5025,8 @@ class MorphPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // 어두운 배경(스크림) — 뒤의 게임 화면이 비치지 않게(레이어 정리)
+    canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xF10A0806));
     final t = w.morphClock;
     final cy = size.height * 0.40;
     final R = min(size.width, size.height) * 0.13;
