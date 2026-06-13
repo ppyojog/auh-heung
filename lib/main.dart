@@ -60,6 +60,7 @@ class Enemy {
   double flash = 0; // 피격 섬광
   double atkT = 0; // 원거리 적 사격 쿨다운
   double chill = 0; // 서리(특별스킬) 둔화 잔여시간
+  bool elite = false; // 엘리트(정예) — 강하고 보상 확정
   bool dead = false;
   Enemy(this.id, this.x, this.y, this.hp, this.maxHp, this.speed, this.dmg, this.radius, this.type);
 }
@@ -441,6 +442,27 @@ class World {
   double get scaleT => time + _headStart;
   int kills = 0;
   int _mileShown = 0; // 생존 마일스톤 연출 카운터
+  // ── 게임필(juice) — 검증된 기법: 크리티컬·히트스톱·콤보·스크린플래시 ──
+  int combo = 0; // 연속 처치 콤보(짧은 시간 내 처치 누적)
+  double comboT = 0; // 콤보 유지 타이머
+  int _comboMileShown = 0; // 콤보 마일스톤 연출
+  double _hitStop = 0; // 히트스톱(타격 순간 미세 정지)
+  double _hsCd = 0; // 히트스톱 쿨다운(잦은 크리로 슬로모 누적 방지)
+  double flashT = 0; // 스크린 플래시 잔여
+  Color flashCol = P.gold; // 스크린 플래시 색
+  double get critChance => 0.12; // 크리 확률(추후 장비/메타 확장 여지)
+  double get comboDmg => 1.0 + (combo > 60 ? 60 : combo) * 0.004; // 콤보 공격 보너스(최대 +24%)
+  // 히트스톱 발동 — 작은(크리)건 쿨다운 제한, 큰 이벤트(force)는 항상.
+  void _hs(double v, {bool force = false}) {
+    if (!force && _hsCd > 0) return;
+    if (v > _hitStop) _hitStop = v > 0.09 ? 0.09 : v;
+    _hsCd = 0.22;
+  }
+
+  void _flash(Color c, double v) {
+    flashCol = c;
+    if (v > flashT) flashT = v;
+  }
 
   // 플레이어
   double px = 0, py = 0;
@@ -807,6 +829,7 @@ class World {
   double get dmgMult =>
       (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + 0.01 * gearStat('dmg') + devourAtk) *
       charDmg *
+      comboDmg *
       (berserkT > 0 ? 1.35 : 1.0) *
       (sp('fury') ? 1.25 : 1.0);
   double get fireMult =>
@@ -882,6 +905,12 @@ class World {
     _heraldCd = 0;
     _lowCd = 0;
     _streakKillMark = 0;
+    combo = 0;
+    comboT = 0;
+    _comboMileShown = 0;
+    _hitStop = 0;
+    _hsCd = 0;
+    flashT = 0;
     stage = (atStage ?? startStage).clamp(1, maxStage); // 선택한 시작 스테이지에서 출발
     pendingStage = stage;
     startStage = stage;
@@ -914,6 +943,8 @@ class World {
     }
     pulses.add(Pulse(px, py, max(w, h), 0.55, P.gold));
     pulses.add(Pulse(px, py, max(w, h) * 0.6, 0.45, P.blood));
+    _flash(P.gold, 0.7);
+    _hs(0.07, force: true);
     _float(px, py - 30, '어 흥 !!', P.gold, 30);
     _say(_pick(Tiny.ult), force: true, face: '🔥');
     _shakeAdd(18);
@@ -959,6 +990,21 @@ class World {
     if (phase != GPhase.playing) return;
     if (w <= 0 || h <= 0) return;
     if (dt > 0.05) dt = 0.05;
+    // 히트스톱 — 타격 순간 월드를 미세하게 정지(타격감). 쿨다운/잔여는 실시간으로 소진.
+    if (_hsCd > 0) _hsCd -= dt;
+    if (_hitStop > 0) {
+      _hitStop -= dt;
+      dt *= 0.12;
+    }
+    // 콤보 유지/소멸 + 스크린 플래시 소멸
+    if (comboT > 0) {
+      comboT -= dt;
+      if (comboT <= 0) {
+        combo = 0;
+        _comboMileShown = 0;
+      }
+    }
+    if (flashT > 0) flashT = max(0, flashT - dt * 3.2);
     time += dt;
     if (berserkT > 0) berserkT = max(0, berserkT - dt);
     // 펫 타이니 — 이동 방향의 '뒤'를 360° 따라다님(움직이는 쪽 반대편으로 자동 조정)
@@ -1058,6 +1104,7 @@ class World {
       _petSay('오— 강해졌다!');
       sfx.play('level');
       pulses.add(Pulse(px, py, 120, 0.5, P.gold));
+      _flash(P.gold, 0.35);
       // 양→호랑이 변신 마일스톤 대사 (USP)
       if (_tigerMile < 1 && level >= 5) {
         _tigerMile = 1;
@@ -1161,6 +1208,14 @@ class World {
     } else {
       e = Enemy(_eid++, x, y, base, base, 44 + scaleT * 0.12, (3.6 + scaleT * 0.024) * diff, 11, t);
     }
+    // 엘리트(정예) — 가끔 등장. 강하지만 처치 시 확정 보상(우선 처치 타겟 = 긴장·재미).
+    if (t != EType.swarm && scaleT > 35 && rng.nextDouble() < 0.045) {
+      e.elite = true;
+      e.hp *= 3.2;
+      e.maxHp *= 3.2;
+      e.radius *= 1.35;
+      e.dmg *= 1.25;
+    }
     enemies.add(e);
   }
 
@@ -1244,8 +1299,7 @@ class World {
             }
             if (nxt == null) break;
             lines.add(LineFx(fx, fy, nxt.x, nxt.y, P.cyan));
-            _hurt(nxt, dmg);
-            _float(nxt.x, nxt.y - nxt.radius, dmg.round().toString(), P.cyan, 12);
+            _dealHit(nxt, dmg, P.cyan, 12);
             hitSet.add(nxt.id);
             fx = nxt.x;
             fy = nxt.y;
@@ -1267,8 +1321,7 @@ class World {
         for (final e in enemies) {
           final rr = radius + e.radius;
           if ((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy) <= rr * rr) {
-            _hurt(e, dmg);
-            _float(e.x, e.y - e.radius - 4, dmg.round().toString(), P.green, 12);
+            _dealHit(e, dmg, P.green, 12);
           }
         }
         pulses.add(Pulse(ox, oy, radius, 0.5, P.green));
@@ -1286,8 +1339,7 @@ class World {
         for (final e in enemies) {
           final d = sqrt((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py));
           if (d <= radius + e.radius) {
-            _hurt(e, dmg);
-            _float(e.x, e.y - e.radius - 4, dmg.round().toString(), P.gold, 12);
+            _dealHit(e, dmg, P.gold, 12);
             // 살짝 밀어내기
             if (d > 0.1) {
               e.x += (e.x - px) / d * push;
@@ -1467,8 +1519,7 @@ class World {
         if (e.dead || b.hitIds.contains(e.id)) continue;
         final rr = (b.radius + e.radius);
         if ((b.x - e.x) * (b.x - e.x) + (b.y - e.y) * (b.y - e.y) <= rr * rr) {
-          _hurt(e, b.dmg);
-          _float(e.x, e.y - e.radius - 4, b.dmg.round().toString(), P.goldSoft, 13);
+          _dealHit(e, b.dmg, P.goldSoft, 13);
           sfx.play('hit', gapMs: 45);
           b.hitIds.add(e.id);
           if (b.pierce <= 0) {
@@ -1526,6 +1577,26 @@ class World {
         petHappyT = 1.0; // 펫이 기뻐함
         // [포식] 삼켜서 회복 + 성장
         devour += 1;
+        // 콤보 — 연속 처치 누적(짧은 유지창). 높을수록 공격 보너스 + 연출 고조.
+        combo += 1;
+        comboT = 2.4;
+        if (combo >= 10 && combo - _comboMileShown >= 10) {
+          _comboMileShown = combo;
+          sfx.play('level');
+          _hs(0.03);
+        }
+        // 엘리트 처치 — 확정 보상(파워업 픽업 + 송곳니) + 큰 연출
+        if (e.elite) {
+          pickups.add(Pickup(e.x, e.y, PickType.values[rng.nextInt(PickType.values.length)]));
+          fangs += 8;
+          runFangs += 8;
+          devour += 6;
+          _float(e.x, e.y - e.radius - 8, 'ELITE 격파! +🦷8', P.gold, 17);
+          _flash(P.gold, 0.5);
+          _hs(0.06, force: true);
+          _shakeAdd(8);
+          _hapticBig = true;
+        }
         double heal = e.type == EType.boss
             ? 12.0
             : (e.type == EType.tank ? 2.5 : (e.type == EType.fast ? 0.4 : 0.6));
@@ -1574,6 +1645,8 @@ class World {
           _say(_pick(Tiny.boss), force: true, face: '😼');
           _shakeAdd(10);
           _hapticBig = true;
+          _flash(P.blood, 0.6);
+          _hs(0.08, force: true);
           _dropGearLoot(); // 보스 전리품 → 장비 루트(미보유 중 1개) 획득 가능
         }
         final drops = e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1);
@@ -1611,6 +1684,19 @@ class World {
     e.hp -= dmg;
     e.flash = 1;
     if (sp('freeze') && e.type != EType.boss) e.chill = 1.2; // 서리 손길
+  }
+
+  // 단발 타격 — 크리티컬 판정 + 데미지 숫자 연출(크리=금색 큰 숫자 + 히트스톱). 검증된 게임필.
+  void _dealHit(Enemy e, double dmg, Color col, double size) {
+    final crit = rng.nextDouble() < critChance;
+    final d = crit ? dmg * 2.0 : dmg;
+    _hurt(e, d);
+    if (crit) {
+      _float(e.x, e.y - e.radius - 6, '${d.round()}!', P.gold, size + 7);
+      _hs(0.045); // 크리 순간 미세 정지
+    } else {
+      _float(e.x, e.y - e.radius - 4, d.round().toString(), col, size);
+    }
   }
 
   // ── 구슬 ──
@@ -1994,6 +2080,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 world.phase == GPhase.menu) _hud(),
             if (world.phase == GPhase.playing) _rageButton(),
             if (world.phase == GPhase.playing) _tinyCallButton(),
+            if (world.phase == GPhase.playing && world.combo >= 5) _comboDisplay(),
             if (world.phase == GPhase.playing && world.heraldT > 0) _heraldBubble(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.shop) _shopOverlay(),
@@ -2039,6 +2126,41 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             // 경험치
             _bar(xpFrac, P.cyan, height: 6),
           ]),
+        ),
+      ),
+    );
+  }
+
+  // ── 콤보 카운터 — 연속 처치 고조(검증된 도파민). 콤보 높을수록 색·크기↑ ──
+  Widget _comboDisplay() {
+    final c = world.combo;
+    final col = c >= 40 ? P.red : (c >= 20 ? const Color(0xFFE8702E) : P.gold);
+    // 막 갱신됐을 때 살짝 팝(comboT가 2.4에서 시작해 줄어듦)
+    final fresh = (world.comboT / 2.4).clamp(0.0, 1.0);
+    final pop = 1.0 + (fresh > 0.85 ? (fresh - 0.85) * 1.6 : 0.0);
+    return Positioned(
+      top: 64,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: Center(
+          child: Transform.scale(
+            scale: pop,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('🔥 $c 연속',
+                  style: TextStyle(
+                      color: col,
+                      fontSize: 22 + (c >= 20 ? 6.0 : 0.0),
+                      fontWeight: FontWeight.bold,
+                      shadows: const [Shadow(color: Colors.black, blurRadius: 4)])),
+              Text('공격 +${((world.comboDmg - 1) * 100).round()}%',
+                  style: TextStyle(
+                      color: col.withOpacity(0.9),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      shadows: const [Shadow(color: Colors.black, blurRadius: 3)])),
+            ]),
+          ),
         ),
       ),
     );
@@ -3396,6 +3518,12 @@ class WorldPainter extends CustomPainter {
 
     canvas.restore();
 
+    // 스크린 플래시 — 큰 이벤트(레벨업·어흥·보스·엘리트) 순간 화면 전체 발광(절제된 세기)
+    if (w.flashT > 0) {
+      canvas.drawRect(Offset.zero & size,
+          Paint()..color = w.flashCol.withOpacity((w.flashT * 0.4).clamp(0.0, 0.32)));
+    }
+
     // 방향키 — 하단 우측 고정(오른손잡이), 반투명. 노브는 진행 방향 반영. (플레이 중에만)
     if (w.phase != GPhase.playing) return;
     final jx = size.width - 74.0, jy = size.height - 78.0, baseR = 46.0;
@@ -3467,6 +3595,16 @@ class WorldPainter extends CustomPainter {
         break;
     }
     // 어두운 코어 + 네온 후광/링 (플레이어보다 어둡게 → 대비로 가독성)
+    // 엘리트 — 금색 회전 후광 + 외곽 링(우선 처치 타겟으로 눈에 띄게)
+    if (e.elite) {
+      canvas.drawCircle(Offset(e.x, e.y), e.radius * 2.0, Paint()..color = P.gold.withOpacity(0.16));
+      final a0 = w.time * 2.2;
+      for (int i = 0; i < 3; i++) {
+        final a = a0 + i * 2.094;
+        canvas.drawCircle(Offset(e.x + cos(a) * (e.radius + 7), e.y + sin(a) * (e.radius + 7)), 2.6,
+            Paint()..color = P.gold);
+      }
+    }
     canvas.drawCircle(Offset(e.x, e.y), e.radius * 1.7, Paint()..color = base.withOpacity(0.10));
     canvas.drawCircle(Offset(e.x, e.y), e.radius, Paint()..color = const Color(0xFF0E0A08));
     canvas.drawCircle(
