@@ -30,8 +30,8 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build web (CanvasKit 렌더러 — WebGL/Skia, iOS 60fps 게임 성능. 이모지는 Noto 컬러 폴백)
-        run: flutter build web --release --web-renderer canvaskit --base-href "/${{ github.event.repository.name }}/"
+      - name: Build web (HTML 렌더러 — 모든 환경에서 그래픽 정상·애플 컬러 이모지. CanvasKit은 iOS 인앱서 그래픽 깨짐 확인됨)
+        run: flutter build web --release --web-renderer html --base-href "/${{ github.event.repository.name }}/"
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
