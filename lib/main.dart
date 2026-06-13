@@ -2281,6 +2281,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   final World world = World();
   late final Ticker _ticker;
   Duration _last = Duration.zero;
+  final RepaintTicker _repaint = RepaintTicker(); // 캔버스만 60fps 리페인트(위젯 리빌드 없이)
+  double _hudClock = 0; // HUD 위젯 리빌드 스로틀(저빈도)
 
   @override
   void initState() {
@@ -2323,9 +2325,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     world.updMs = world.updMs * 0.9 + sw.elapsedMicroseconds / 1000.0 * 0.1; // update 소요(ms)
     world.consumeHaptics();
     if (world.phase == GPhase.title) world.titleClock += dt; // 메인화면 애니메이션
-    // 성능: 플레이·각성·메인화면은 매 프레임 리페인트. 그 외 화면은 상태 변화 시에만.
     final anim = wasPlaying || world.phase == GPhase.morph || world.phase == GPhase.title;
-    if (mounted && (anim || world.phase != _lastPhase)) {
+    // 캔버스(게임/배경/조이스틱)는 60fps로 리페인트하되 위젯 트리는 다시 빌드하지 않음 → 위젯 할당·GC 폭증 제거
+    if (anim) _repaint.tick();
+    // HUD·버튼·오버레이 위젯은 페이즈 변화 시 + 저빈도(~12fps)로만 리빌드(체력/콤보/타이머는 이 정도면 충분)
+    final phaseChanged = world.phase != _lastPhase;
+    _hudClock += dt;
+    if (mounted && (phaseChanged || (anim && _hudClock >= 0.08))) {
+      _hudClock = 0;
       setState(() {});
     }
     _lastPhase = world.phase;
@@ -2334,6 +2341,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   @override
   void dispose() {
     _ticker.dispose();
+    _repaint.dispose();
     super.dispose();
   }
 
@@ -2355,7 +2363,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 onPanEnd: (_) => world.joyEnd(),
                 onPanCancel: () => world.joyEnd(),
                 child: RepaintBoundary(
-                  child: CustomPaint(size: Size.infinite, painter: WorldPainter(world)),
+                  child: CustomPaint(
+                      size: Size.infinite, painter: WorldPainter(world, repaint: _repaint)),
                 ),
               ),
             ),
@@ -4539,9 +4548,15 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 // =============================================================================
 //  월드 페인터 — 네온 벡터 (어두운 배경 + 발광 레이어). 전부 코드 생성.
 // =============================================================================
+// 캔버스 전용 60fps 리페인트 신호 — 매 프레임 setState(위젯 트리 전체 리빌드) 대신 이걸 notify해
+// CustomPainter만 다시 그린다(위젯 할당·GC 폭증 제거 → iOS 주기적 프레임 스파이크 해소).
+class RepaintTicker extends ChangeNotifier {
+  void tick() => notifyListeners();
+}
+
 class WorldPainter extends CustomPainter {
   final World w;
-  WorldPainter(this.w);
+  WorldPainter(this.w, {Listenable? repaint}) : super(repaint: repaint);
 
   // 스테이지 배경 테마 — 3스테이지마다 분위기 전환(반복 맵의 단조로움 해소, 근거: 장르 지루함 1순위).
   //  [내부색, 외곽색, 그리드색, 부유 모트색] · 코드 전용.
