@@ -30,17 +30,17 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # CanvasKit + --no-web-resources-cdn: wasm을 앱 도메인(GitHub Pages)에 동봉해 로컬 로드
-      # (iOS에서 CDN 페치 실패로 화면 비던 알려진 이슈의 정석 해결책).
-      # 두 개를 한 번에 빌드·배포: 현재 게임=루트, Flame 검증 슬라이스=/lab (폰에서 A/B 비교)
-      - name: Build web — 현재 게임(루트) + Flame 슬라이스(/lab)
+      # 렌더러 분리:
+      #  - 루트(현재 게임)=html → 그래픽 정확(애플 컬러 이모지, CanvasKit 렌더 깨짐 없음)
+      #  - /lab(Flame)=canvaskit+로컬wasm → 게임엔진 성능 검증(Flame은 canvaskit 필요)
+      - name: Build web — 현재 게임(루트, html) + Flame 슬라이스(/lab, canvaskit)
         run: |
           REPO="${{ github.event.repository.name }}"
-          # 루트(현재 게임)는 반드시 성공해야 배포 — 실패 시 잡 중단
-          flutter build web --release --web-renderer canvaskit --no-web-resources-cdn --base-href "/$REPO/"
+          # 루트(현재 게임) — html 렌더러, 반드시 성공해야 배포
+          flutter build web --release --web-renderer html --base-href "/$REPO/"
           rm -rf site && mkdir -p site
           cp -r build/web/. site/
-          # Flame lab 빌드 — 에러는 사이트에 로그로 남겨 원격에서 읽음(루트 배포는 막지 않음)
+          # Flame lab — canvaskit + 로컬wasm. 에러는 사이트에 로그로 남겨 원격 확인(루트 배포는 막지 않음)
           rm -rf build/web
           flutter build web --release --web-renderer canvaskit --no-web-resources-cdn --base-href "/$REPO/lab/" -t lib/lab.dart > lab_build.log 2>&1 || true
           cp lab_build.log site/lab_build.log
