@@ -30,8 +30,8 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build web (HTML 렌더러 — Noto Color Emoji 웹폰트로 이모지 렌더)
-        run: flutter build web --release --web-renderer html --base-href "/${{ github.event.repository.name }}/"
+      - name: Build web (CanvasKit 렌더러 — WebGL/Skia, iOS 60fps 게임 성능. 이모지는 Noto 컬러 폴백)
+        run: flutter build web --release --web-renderer canvaskit --base-href "/${{ github.event.repository.name }}/"
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
