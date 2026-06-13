@@ -68,7 +68,10 @@ class Enemy {
   double chill = 0; // 서리(특별스킬) 둔화 잔여시간
   bool elite = false; // 엘리트(정예) — 강하고 보상 확정
   bool dead = false;
-  Enemy(this.id, this.x, this.y, this.hp, this.maxHp, this.speed, this.dmg, this.radius, this.type);
+  // 돌진 행동(엘리트·fast) — 텔레그래프 후 직선 돌진. 회피=포지셔닝 전략.
+  double chargeCd = 0, windup = 0, charging = 0, cvx = 0, cvy = 0;
+  Enemy(this.id, this.x, this.y, this.hp, this.maxHp, this.speed, this.dmg, this.radius, this.type)
+      : chargeCd = 2.0 + (id % 5) * 0.7; // 첫 돌진 시점 분산
 }
 
 // 원거리 적이 쏘는 투사체
@@ -739,7 +742,8 @@ class World {
 
   // 스테이지별 난이도 — '상한 없음'. 스테이지가 계속 오르므로 적도 끝없이 강해진다(장수성).
   //  높은 스테이지 = 플레이어가 고른 난이도 = 보상도 비례↑ (VS의 Curse식 자기 난이도 조절).
-  double diffForStage(int s) => (0.7 + (s - 1) * 0.08).clamp(0.5, 99.0).toDouble();
+  // 고스테이지일수록 더 가파르게(후반 긴장↑). 초반(온보딩)은 그대로 완만.
+  double diffForStage(int s) => (0.7 + (s - 1) * 0.09 + (s > 8 ? (s - 8) * 0.03 : 0)).clamp(0.5, 99.0).toDouble();
   void _applyStageDiff() => diff = diffForStage(stage);
   // 다음 스테이지까지 시간 — 더 짧게(빠른 진행감·잦은 분위기 전환)
   double _stageDuration(int s) => (10.0 + s * 1.8).clamp(10.0, 32.0).toDouble();
@@ -1686,9 +1690,27 @@ class World {
         e.chill -= dt;
         sm *= 0.4; // 서리 둔화
       }
-      if (d > 0.1) {
-        e.x += dx / d * e.speed * sm * curseEnemySpd * dt;
-        e.y += dy / d * e.speed * sm * curseEnemySpd * dt;
+      final move = e.speed * sm * curseEnemySpd;
+      final canCharge = e.type != EType.boss && (e.elite || e.type == EType.fast);
+      if (canCharge && e.charging > 0) {
+        // 돌진 중 — 잠긴 방향으로 빠르게(회피 요구)
+        e.charging -= dt;
+        e.x += e.cvx * move * 3.4 * dt;
+        e.y += e.cvy * move * 3.4 * dt;
+      } else if (canCharge && e.windup > 0) {
+        // 텔레그래프 — 멈칫(예고). 끝나면 방향 잠그고 돌진 시작
+        e.windup -= dt;
+        if (e.windup <= 0 && d > 0.1) {
+          e.cvx = dx / d;
+          e.cvy = dy / d;
+          e.charging = 0.42;
+          e.chargeCd = 3.5 + rng.nextDouble() * 2.5;
+        }
+      } else if (canCharge && (e.chargeCd -= dt) <= 0 && d < 300 && d > 70) {
+        e.windup = 0.55; // 돌진 예고 시작
+      } else if (d > 0.1) {
+        e.x += dx / d * move * dt;
+        e.y += dy / d * move * dt;
       }
       if (e.flash > 0) e.flash -= dt * 4;
       // 원거리 적 — 주기적으로 플레이어를 향해 투사체 발사
@@ -5402,6 +5424,39 @@ class WorldPainter extends CustomPainter {
       case EType.grunt:
         base = const Color(0xFF8A9BB0);
         break;
+    }
+    // 돌진 텔레그래프 — 예고 중엔 플레이어 방향으로 붉은 경고선(회피 신호)
+    if (e.windup > 0) {
+      final dx = w.px - e.x, dy = w.py - e.y;
+      final dl = sqrt(dx * dx + dy * dy);
+      if (dl > 0.1) {
+        final ux = dx / dl, uy = dy / dl;
+        final warn = (1 - e.windup / 0.55).clamp(0.0, 1.0);
+        canvas.drawLine(
+            Offset(e.x, e.y),
+            Offset(e.x + ux * 90 * warn, e.y + uy * 90 * warn),
+            Paint()
+              ..strokeWidth = 3
+              ..strokeCap = StrokeCap.round
+              ..color = P.red.withOpacity(0.5 * warn));
+      }
+      canvas.drawCircle(
+          Offset(e.x, e.y),
+          e.radius + 6,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = P.red.withOpacity(0.7));
+    }
+    // 돌진 중 — 뒤로 붉은 잔상(빠른 이동 강조)
+    if (e.charging > 0) {
+      canvas.drawLine(
+          Offset(e.x - e.cvx * 22, e.y - e.cvy * 22),
+          Offset(e.x, e.y),
+          Paint()
+            ..strokeWidth = e.radius
+            ..strokeCap = StrokeCap.round
+            ..color = P.red.withOpacity(0.3));
     }
     // 어두운 코어 + 네온 후광/링 (플레이어보다 어둡게 → 대비로 가독성)
     // 엘리트 — 금색 회전 후광 + 외곽 링(우선 처치 타겟으로 눈에 띄게)
