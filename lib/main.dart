@@ -419,7 +419,7 @@ class Sfx {
   }
 }
 
-enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, forge, travel, options, diag, morph, notice }
+enum GPhase { title, playing, levelup, dead, shop, menu, achieve, skins, status, inventory, forge, travel, options, diag, morph, notice, den }
 
 // 영구 강화(메타 진행) — 죽어도 남는 '송곳니'로 구매. 죽음이 헛되지 않게.
 class MetaUp {
@@ -437,6 +437,26 @@ const List<MetaUp> kMeta = [
   MetaUp('pick', '🧲', '굶주린 코', '수집 범위 +8', 25, 20),
   MetaUp('gain', '🦷', '전리품 사냥꾼', '송곳니 획득 +12%', 40, 20),
   MetaUp('crit', '⚡', '치명의 송곳니', '치명타 확률 +2%', 45, 20),
+];
+
+// 소굴(거점) 발전 — 송곳니로 짓는 영구 시설. 단련(즉발 스탯)과 달리 '거점을 키우는' 깊은 성장 축.
+//  분기마다 역할이 달라 어디에 투자할지(공격/생존/경제) 전략적 선택이 생긴다.
+class DenUp {
+  final String id, icon, name, desc;
+  final int maxLv, baseCost;
+  final double growth, per; // per: 레벨당 효과 크기
+  const DenUp(this.id, this.icon, this.name, this.desc, this.maxLv, this.baseCost, this.growth, this.per);
+}
+
+const List<DenUp> kDen = [
+  DenUp('hp', '🩸', '피의 제단', '최대 체력 +35', 12, 35, 1.32, 35),
+  DenUp('atk', '⚔', '수련장', '공격력 +7%', 12, 40, 1.34, 0.07),
+  DenUp('as', '🌀', '속공굴', '공격 속도 +6%', 10, 45, 1.36, 0.06),
+  DenUp('armor', '🛡', '요새', '받는 피해 −4%', 9, 50, 1.40, 0.04),
+  DenUp('regen', '💗', '재생굴', '초당 체력 회복 +0.5', 8, 55, 1.42, 0.5),
+  DenUp('instinct', '🐯', '본능 각성', '출격 시 시작 강화 +1', 8, 70, 1.5, 1),
+  DenUp('xp', '📖', '지혜의 굴', '경험치 획득 +7%', 8, 45, 1.38, 0.07),
+  DenUp('fang', '🦷', '전리품 창고', '송곳니 획득 +12%', 10, 45, 1.36, 0.12),
 ];
 
 // 업적 — 달성 시 송곳니 보상 + 영구 기록(리텐션·목표)
@@ -571,13 +591,14 @@ class World {
     final mp = maxPortrait;
     final dmgF = 1 +
         0.05 * metaLv('atk') +
+        denVal('atk') +
         0.01 * gearStat('dmg') +
         0.01 * portraitBonusAt(mp, 'dmg') +
         0.12 * prestige;
-    final hpF = (baseMaxHp + 15 * metaLv('hp') + gearStat('hp') + portraitBonusAt(mp, 'hp')) /
+    final hpF = (baseMaxHp + 15 * metaLv('hp') + denVal('hp') + gearStat('hp') + portraitBonusAt(mp, 'hp')) /
         baseMaxHp *
         (1 + 0.12 * prestige);
-    final asF = 1 + 0.01 * gearStat('as') + 0.01 * portraitBonusAt(mp, 'as');
+    final asF = 1 + denVal('as') + 0.01 * gearStat('as') + 0.01 * portraitBonusAt(mp, 'as');
     final spdF = 1 + 0.04 * metaLv('spd') + 0.01 * gearStat('spd') + 0.01 * portraitBonusAt(mp, 'spd');
     return (dmgF * hpF * asF * spdF * 100).round();
   }
@@ -893,6 +914,31 @@ class World {
     return (m.baseCost * pow(m.growth, metaLv(id))).round();
   }
 
+  // ── 소굴(거점) 발전 ──
+  final Map<String, int> den = {};
+  int denLv(String id) => den[id] ?? 0;
+  int get denLevel => den.values.fold(0, (a, b) => a + b); // 소굴 종합 레벨
+  double denVal(String id) {
+    final d = kDen.firstWhere((e) => e.id == id);
+    return denLv(id) * d.per;
+  }
+
+  int denCost(String id) {
+    final d = kDen.firstWhere((e) => e.id == id);
+    return (d.baseCost * pow(d.growth, denLv(id))).round();
+  }
+
+  bool buyDen(String id) {
+    final d = kDen.firstWhere((e) => e.id == id);
+    if (denLv(id) >= d.maxLv) return false;
+    final c = denCost(id);
+    if (fangs < c) return false;
+    fangs -= c;
+    den[id] = denLv(id) + 1;
+    _saveMeta();
+    return true;
+  }
+
   bool buyMeta(String id) {
     final m = kMeta.firstWhere((e) => e.id == id);
     if (metaLv(id) >= m.maxLv) return false;
@@ -984,7 +1030,7 @@ class World {
 
   // ── 파생 스탯 (캐릭터 배수 + 광폭화 + 영구강화(meta) + 장비 + 초상화 진급 반영) ──
   double get maxHp =>
-      (baseMaxHp + 25 * hideLv + 15 * metaLv('hp') + gearStat('hp') + portraitBonus('hp')) *
+      (baseMaxHp + 25 * hideLv + 15 * metaLv('hp') + denVal('hp') + gearStat('hp') + portraitBonus('hp')) *
       charHp *
       prestigeMult;
   double get speed =>
@@ -994,25 +1040,28 @@ class World {
       (berserkT > 0 ? 1.18 : 1.0);
   double get pickupRange =>
       72 + 16.0 * hungerLv + 8 * metaLv('pick') + gearStat('pick') + (sp('magnet') ? 80 : 0);
+  // 소굴 재생굴 — 초당 체력 회복(전투 중 적용)
+  double get denRegen => denVal('regen');
   // 포식(Devour) 누적 성장 — 먹을수록(처치할수록) 연속적으로 강해진다(양→호랑이 핵심 파워).
   //  레벨/선택은 '빌드 방향', 포식은 '꾸준한 누적 파워'로 역할 분리(밸런스 스윙↓).
   // 포식 누적 — 무한 폭주 방지로 상한(공격 최대 +120%, 공속 +50%). 그 뒤는 빌드·장비·환생으로 성장.
   double get devourAtk => (0.0025 * devour).clamp(0.0, 1.2);
   double get devourAs => (0.0012 * devour).clamp(0.0, 0.5);
   double get dmgMult =>
-      (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + 0.01 * gearStat('dmg') + 0.01 * portraitBonus('dmg') + devourAtk) *
+      (1 + 0.12 * wildLv + 0.05 * metaLv('atk') + denVal('atk') + 0.01 * gearStat('dmg') + 0.01 * portraitBonus('dmg') + devourAtk) *
       charDmg *
       prestigeMult *
       (berserkT > 0 ? 1.35 : 1.0) *
       (sp('fury') ? 1.25 : 1.0);
   double get fireMult =>
       1.25 * // 기본 공속 상향(속도감·정신없는 탄막)
-      (1 + 0.10 * rageLv + 0.01 * gearStat('as') + 0.01 * portraitBonus('as') + devourAs) *
+      (1 + 0.10 * rageLv + denVal('as') + 0.01 * gearStat('as') + 0.01 * portraitBonus('as') + devourAs) *
       (berserkT > 0 ? 1.6 : 1.0) *
       (sp('haste') ? 1.3 : 1.0);
-  double get armorMult => sp('armor') ? 0.78 : 1.0; // 받는 피해 배수
-  // 경험치 배수 — 스테이지 보너스 완화(누적 성장이 고스테이지 파워를 담당하므로 레벨 폭주 방지)
-  double get xpMult => 1.0 + (stage - 1) * 0.1;
+  // 받는 피해 배수 — 특수기(강철 가죽) + 소굴 요새. 0.35 밑으로는 안 내려가게(밸런스).
+  double get armorMult => ((sp('armor') ? 0.78 : 1.0) * (1 - denVal('armor'))).clamp(0.35, 1.0);
+  // 경험치 배수 — 스테이지 보너스 + 소굴 지혜의 굴
+  double get xpMult => (1.0 + (stage - 1) * 0.1) * (1 + denVal('xp'));
   bool get rageReady => rage >= rageMax;
 
   void toggleMute() => sfx.muted = !sfx.muted;
@@ -1094,6 +1143,10 @@ class World {
     _stageT = _stageDuration(stage);
     _applyStageDiff();
     _grantStartBuild(stage); // 높은 스테이지면 그만큼의 시작 빌드(무기/패시브/레벨/특별스킬) 자동 지급
+    for (int i = 0; i < denLv('instinct'); i++) {
+      _autoUpgrade(); // 소굴 본능 각성 — 출격 시 시작 강화 추가
+    }
+    hp = maxHp; // 시작 빌드(체력 시설 포함) 반영 후 풀피로
     jActive = false;
     dirx = diry = 0;
     if (stage > 1) {
@@ -1185,10 +1238,10 @@ class World {
     if (petHappyT > 0) petHappyT = max(0, petHappyT - dt);
     if (petLineT > 0) petLineT -= dt;
     if (_petSayCd > 0) _petSayCd -= dt;
-    // 재생 — 특별스킬(최대체력 1.2%/s) + 장비 regen(고정/s)
+    // 재생 — 특별스킬(최대체력 1.2%/s) + 장비 regen(고정/s) + 소굴 재생굴(고정/s)
     if (hp < maxHp) {
       double rps = sp('regen') ? maxHp * 0.012 : 0;
-      rps += gearStat('regen');
+      rps += gearStat('regen') + denRegen;
       if (rps > 0) hp = min(maxHp, hp + rps * dt);
     }
     final moving0 = dirx != 0 || diry != 0;
@@ -2054,8 +2107,11 @@ class World {
     if (time > bestTime) bestTime = time;
     if (kills > bestKills) bestKills = kills;
     // 전리품 적립 — 죽음이 헛되지 않게(플레이한 만큼 보상)
-    runFangs =
-        ((kills + time.floor() + level * 8) * (1 + 0.12 * metaLv('gain')) * prestigeFangMult).round();
+    runFangs = ((kills + time.floor() + level * 8) *
+            (1 + 0.12 * metaLv('gain')) *
+            (1 + denVal('fang')) *
+            prestigeFangMult)
+        .round();
     fangs += runFangs;
     _evalAchievements();
     _saveRecords();
@@ -2174,6 +2230,8 @@ class World {
       fangs = j['fangs'] as int? ?? 0;
       final m = (j['up'] as Map?) ?? {};
       m.forEach((k, v) => meta[k as String] = v as int);
+      final dn = (j['den'] as Map?) ?? {};
+      dn.forEach((k, v) => den[k as String] = v as int);
       achieved.addAll(((j['ach'] as List?) ?? []).map((e) => e as String));
       ownedSkins.addAll(((j['skins'] as List?) ?? []).map((e) => e as String));
       skin = j['skin'] as String? ?? 'default';
@@ -2200,6 +2258,7 @@ class World {
       html.window.localStorage[_metaKey] = jsonEncode({
         'fangs': fangs,
         'up': meta,
+        'den': den,
         'ach': achieved.toList(),
         'skins': ownedSkins.toList(),
         'skin': skin,
@@ -2379,6 +2438,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             if (world.optPerf) _perfHud(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.shop) _shopOverlay(),
+            if (world.phase == GPhase.den) _denOverlay(),
             if (world.phase == GPhase.achieve) _achieveOverlay(),
             if (world.phase == GPhase.skins) _skinsOverlay(),
             if (world.phase == GPhase.status) _statusOverlay(),
@@ -2920,6 +2980,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             bottom: 0,
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
+                _railBtn('🏯', '소굴', const Color(0xFFE0A93B), () => setState(() {
+                      world.phase = GPhase.den;
+                    })),
                 _railBtn('💪', '단련', P.gold, () => setState(() {
                       world.shopReturn = GPhase.title;
                       world.phase = GPhase.shop;
@@ -3058,6 +3121,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           if (world.prestige > 0) chip('🌀 ×${world.prestige}', P.purple),
           chip('🏆 ${world.bestTime > 0 ? World.mmss(world.bestTime) : "–"}', P.gold),
           chip('🌊 ${world.maxStage}', P.cyan),
+          chip('🏯 소굴 Lv${world.denLevel}', const Color(0xFFE0A93B)),
         ],
       ),
     ]);
@@ -3192,6 +3256,84 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         ]),
       ),
     );
+  }
+
+  // ── 소굴(거점) 발전 — 송곳니로 짓는 영구 시설(깊은 성장 축) ──
+  String _denCur(DenUp d, int lv) {
+    if (lv <= 0) return '미건설';
+    switch (d.id) {
+      case 'hp':
+        return '현재 +${(lv * d.per).round()} 체력';
+      case 'regen':
+        return '현재 +${(lv * d.per).toStringAsFixed(1)}/s';
+      case 'instinct':
+        return '현재 시작 강화 +$lv';
+      default:
+        return '현재 +${(lv * d.per * 100).round()}%';
+    }
+  }
+
+  Widget _denOverlay() {
+    return _ovl('🏯', '소굴  ·  Lv ${world.denLevel}', [
+      const Padding(
+        padding: EdgeInsets.fromLTRB(2, 0, 2, 8),
+        child: Text('거점을 키워 영구히 강해진다 — 공격·생존·경제 중 어디에 투자할지가 곧 전략.',
+            style: TextStyle(color: P.muted, fontSize: 11.5, height: 1.35)),
+      ),
+      ...kDen.map((d) {
+        final lv = world.denLv(d.id);
+        final maxed = lv >= d.maxLv;
+        final cost = world.denCost(d.id);
+        final afford = !maxed && world.fangs >= cost;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: lv > 0 ? P.gold.withOpacity(0.08) : P.panel,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: lv > 0 ? P.gold.withOpacity(0.5) : P.line),
+            ),
+            child: Row(children: [
+              Text(d.icon, style: const TextStyle(fontSize: 26)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${d.name}  Lv $lv/${d.maxLv}',
+                      style: const TextStyle(color: P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text('${d.desc} / 레벨   ·   ${_denCur(d, lv)}',
+                      style: const TextStyle(color: P.muted, fontSize: 11.5)),
+                ]),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 86,
+                child: Material(
+                  color: maxed
+                      ? const Color(0xFF2A2018)
+                      : (afford ? P.gold : const Color(0xFF2A2018)),
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: afford ? () => setState(() => world.buyDen(d.id)) : null,
+                    child: Container(
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      child: Text(maxed ? 'MAX' : '🦷 $cost',
+                          style: TextStyle(
+                              color: maxed ? P.muted : (afford ? Colors.black : P.muted),
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        );
+      }),
+    ], GPhase.title);
   }
 
   // ── 무늬(스킨) ──
