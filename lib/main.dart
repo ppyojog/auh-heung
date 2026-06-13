@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-13';
+const String kSaveVer = 'v2026.06.13-14';
 
 void main() => runApp(const SurvivorApp());
 
