@@ -14,7 +14,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 // 카메라 줌 아웃 — 논리 아레나 = 화면 / kZoom (더 넓어 보이게). 1.0=원본, <1=멀리.
-const double kZoom = 0.82;
+const double kZoom = 0.6;
 
 void main() => runApp(const SurvivorApp());
 
@@ -1693,17 +1693,20 @@ class World {
           _hs(0.08, force: true);
           _dropGearLoot(); // 보스 전리품 → 장비 루트(미보유 중 1개) 획득 가능
         }
+        // 화면(아레나) 안에만 떨구기 — 가장자리 밖에서 죽어도 구슬은 안쪽으로 클램프(못 줍는 일 방지)
         final drops = e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1);
         for (int i = 0; i < drops; i++) {
-          orbs.add(Orb(e.x + (rng.nextDouble() - 0.5) * 24, e.y + (rng.nextDouble() - 0.5) * 24,
-              e.type == EType.boss ? 4.0 : 1.0));
+          final ox = (e.x + (rng.nextDouble() - 0.5) * 24).clamp(12.0, w - 12);
+          final oy = (e.y + (rng.nextDouble() - 0.5) * 24).clamp(12.0, h - 12);
+          orbs.add(Orb(ox, oy, e.type == EType.boss ? 4.0 : 1.0));
         }
-        // 바닥 파워업 가끔 드랍(탱크·분열은 확률↑) — 순간 변수·도파민
+        // 바닥 파워업 가끔 드랍(탱크·분열은 확률↑) — 순간 변수·도파민. 역시 화면 안으로.
         final pdrop = e.type == EType.boss
             ? 0.0
             : (e.type == EType.tank ? 0.16 : (e.type == EType.splitter ? 0.06 : 0.022));
         if (pickups.length < 6 && rng.nextDouble() < pdrop) {
-          pickups.add(Pickup(e.x, e.y, PickType.values[rng.nextInt(PickType.values.length)]));
+          pickups.add(Pickup(e.x.clamp(16.0, w - 16), e.y.clamp(16.0, h - 16),
+              PickType.values[rng.nextInt(PickType.values.length)]));
         }
         final col = e.type == EType.fast
             ? P.purple
