@@ -47,7 +47,9 @@ class SurvivorApp extends StatelessWidget {
 // =============================================================================
 //  엔티티
 // =============================================================================
-enum EType { grunt, fast, tank, boss }
+// grunt=잡몹 / fast=쾌속 / tank=육중 / swarm=떼거리(약·빠름) /
+// splitter=분열(죽으면 둘로) / bomber=자폭(죽을 때 폭발) / shooter=원거리(투사체) / boss=거수
+enum EType { grunt, fast, tank, swarm, splitter, bomber, shooter, boss }
 
 class Enemy {
   final int id;
@@ -56,8 +58,17 @@ class Enemy {
   double speed, dmg, radius;
   EType type;
   double flash = 0; // 피격 섬광
+  double atkT = 0; // 원거리 적 사격 쿨다운
+  double chill = 0; // 서리(특별스킬) 둔화 잔여시간
   bool dead = false;
   Enemy(this.id, this.x, this.y, this.hp, this.maxHp, this.speed, this.dmg, this.radius, this.type);
+}
+
+// 원거리 적이 쏘는 투사체
+class EBullet {
+  double x, y, vx, vy, dmg, life;
+  bool dead = false;
+  EBullet(this.x, this.y, this.vx, this.vy, this.dmg, this.life);
 }
 
 class Bullet {
@@ -119,17 +130,17 @@ class Upgrade {
 class Tiny {
   const Tiny._();
   static const greet = [
-    '대장님, 오늘도 의회 놈들의 간담을 서늘하게 해주시죠. 제가 곁을 지킵니다.',
-    '크흐… 사냥의 시간입니다. 저 타이니, 대장님의 마지막 송곳니가 함께합니다.',
+    '대장님, 곁을 지키겠습니다. 사냥의 시간입니다.',
+    '저 타이니, 대장님의 송곳니가 되어 함께하겠습니다.',
   ];
   static const level = [
-    '또 강해지셨습니까 대장님?! 하늘마저 대장님 편입니다!',
+    '또 강해지셨습니다, 대장님!',
     '이 힘… 대륙이 대장님을 중심으로 돕니다!',
-    '크하핫! 누가 감히 대장님을 양이라 했습니까!',
-    '한 꺼풀 벗을 때마다 더 사나워지시는군요. 역시 제 주인!',
+    '발톱이 한층 더 날카로워졌습니다!',
+    '점점 더 사나워지시는군요. 역시 제 주인!',
   ];
   static const boss = [
-    '보셨습니까! 의회의 거수가 대장님 발톱에 찢겼습니다!',
+    '보셨습니까! 거수가 대장님 발톱에 찢겼습니다!',
     '저 거대한 놈도 대장님 앞에선 한낱 먹잇감이었군요!',
   ];
   static const ult = [
@@ -137,12 +148,17 @@ class Tiny {
     '어흥!! 이것이 진정한 맹수의 울음입니다, 대장님!',
   ];
   static const low = [
-    '대장님 정도면 이건 일부러 봐주시는 거죠…? 그렇죠?!',
-    '피 좀 보이는 게 대숩니까! 대장님은 더 사나워질 뿐입니다!',
+    '대장님, 위험합니다 — 잠시 물러서시죠!',
+    '피가 보입니다! 부디 조심하십시오, 대장님!',
   ];
   static const streak = [
-    '멈추질 않으십니다! 놈들이 줄지어 쓰러집니다!',
+    '놈들이 줄지어 쓰러집니다, 대장님!',
     '대장님 지나간 자리엔 시체만 쌓입니다!',
+  ];
+  // 양→호랑이 변신 마일스톤 (USP 강화)
+  static const tiger = [
+    '대장님… 더는 양이 아니십니다. 호랑이의 눈빛입니다!',
+    '털가죽 아래 맹수가 깨어납니다 — 어흥!',
   ];
 }
 
@@ -155,12 +171,30 @@ class Character {
       {this.dmg = 1, this.hp = 1, this.speed = 1});
 }
 
+// 단일 시작 캐릭터 — '호랑이가 되고 싶은 양'. 순한 양으로 시작해
+// 사냥·성장(레벨/포식)할수록 화면 속 모습이 호랑이로 변해간다(USP: 양→호랑이).
 const List<Character> kChars = [
-  Character('white', '백호 부족장', '🐯', '균형의 맹수. 발톱 폭풍으로 시작.', P.gold, 'claw'),
-  Character('black', '그림자 흑표', '🐆', '유리대포. 공격력↑ 체력↓. 회전 송곳니로 시작.', P.purple, 'fang',
-      dmg: 1.3, hp: 0.7, speed: 1.12),
-  Character('iron', '무쇠뿔 들소', '🐃', '육중한 탱크. 체력↑ 느림. 포효로 시작.', P.cyan, 'roar',
-      dmg: 0.9, hp: 1.6, speed: 0.82),
+  Character('lamb', '호랑이가 되고 싶은 양', '🐑',
+      '순한 양. 하지만 사냥할수록 발톱이 돋고, 호랑이로 깨어난다.', P.gold, 'claw'),
+];
+
+// 특별스킬 — 10레벨마다 1개 선택(중복 불가). 판을 뒤집는 강력한 한 방.
+class Special {
+  final String id, icon, name, desc;
+  const Special(this.id, this.icon, this.name, this.desc);
+}
+
+const List<Special> kSpecials = [
+  Special('fury', '🐯', '맹수의 격', '모든 공격력 +25%'),
+  Special('haste', '⚡', '과부하', '공격 속도 +30%'),
+  Special('armor', '🛡', '강철 가죽', '받는 피해 −22%'),
+  Special('slow', '🕸', '거미줄 본능', '모든 적 이동속도 −18%'),
+  Special('magnet', '🧲', '굶주린 포식', '수집 범위 대폭↑ · 경험치 +30%'),
+  Special('regen', '💗', '재생', '매초 체력이 서서히 회복'),
+  Special('lifesteal', '🩸', '흡혈', '처치 시 회복량 3배'),
+  Special('explode', '💥', '연쇄 폭발', '적 처치 시 주변이 폭발한다'),
+  Special('multi', '🌪', '분신 발톱', '발톱 투사체 +1줄기'),
+  Special('freeze', '❄', '서리 손길', '맞은 적이 잠시 얼어붙는다'),
 ];
 
 // =============================================================================
@@ -389,6 +423,13 @@ class World {
   int devour = 0;
   int cheatPending = 0; // [치트] 대기 중인 강제 레벨업(스킬 선택) 횟수
   double get growScale => (0.9 + devour * 0.005).clamp(0.9, 1.6);
+  // 양→호랑이 변신 진척(0=양, 1=완전한 호랑이). 레벨이 주 동력 + 포식 보조.
+  double get tigerProg => ((level - 1) / 13.0 + devour / 700.0).clamp(0.0, 1.0);
+  int _tigerMile = 0; // 변신 대사 마일스톤
+  // 특별스킬(10레벨마다 1개) — 보유 집합 + 선택중 플래그
+  final Set<String> specials = {};
+  bool specialChoice = false;
+  bool sp(String id) => specials.contains(id);
   // 업적
   final Set<String> achieved = {};
   final List<String> pendingAch = []; // 이번 사망에서 새로 달성한 것
@@ -429,13 +470,18 @@ class World {
   GPhase shopReturn = GPhase.title; // 상점에서 돌아갈 화면
   int _streakKillMark = 0;
   // 난이도 = 스테이지 기반. 높을수록 적 강함 + XP·광기 획득 ↑(빠른 성장)
-  double diff = 0.85;
+  double diff = 0.78;
   int stage = 1, maxStage = 1; // 현재/최고 도달 스테이지(최고는 슬롯별 영구 저장)
-  double _stageT = 45; // 자동 상승 타이머
+  int pendingStage = 1; // 메뉴에서 고르는 '이동 목표' 스테이지(선택 후 버튼으로 확정)
+  double _stageT = 15; // 자동 상승 타이머(초반 빠름 → 점점 길어짐)
   TinyChoice? tinyChoice; // (구 난이도 대화 — 미사용)
   double _choiceCd = 14, _advT = 48;
 
-  void _applyStageDiff() => diff = (0.85 + (stage - 1) * 0.13).clamp(0.6, 4.0).toDouble();
+  // 스테이지별 난이도 — 간극을 낮춰(0.07) 급상승 방지. 스테이지는 빠르게 오르되 한 칸의 체감은 완만.
+  double diffForStage(int s) => (0.78 + (s - 1) * 0.07).clamp(0.6, 3.0).toDouble();
+  void _applyStageDiff() => diff = diffForStage(stage);
+  // 다음 스테이지까지 시간 — 초반은 짧게(빠른 진행감), 갈수록 길어짐
+  double _stageDuration(int s) => (13.0 + s * 2.2).clamp(13.0, 38.0).toDouble();
 
   // 타이니 메뉴에서 스테이지 ±조정 — 도달한 최고 스테이지까지만 (클리어한 곳만 선택)
   void setStage(int s) {
@@ -464,6 +510,7 @@ class World {
   // 엔티티
   final List<Enemy> enemies = [];
   final List<Bullet> bullets = [];
+  final List<EBullet> eBullets = []; // 원거리 적 투사체
   final List<Orb> orbs = [];
   final List<Particle> parts = [];
   final List<Pulse> pulses = [];
@@ -494,7 +541,17 @@ class World {
 
 
   void openMenu() {
-    if (phase == GPhase.playing) phase = GPhase.menu;
+    if (phase == GPhase.playing) {
+      pendingStage = stage;
+      phase = GPhase.menu;
+    }
+  }
+
+  // 메뉴에서 고른 스테이지로 '이동' 후 재개 (포기하고 마치기 대체)
+  void travelToStage() {
+    setStage(pendingStage);
+    hp = min(maxHp, hp + maxHp * 0.15); // 사냥터 이동 시 약간의 숨 고르기
+    if (phase == GPhase.menu) phase = GPhase.playing;
   }
 
   void resume() {
@@ -599,10 +656,14 @@ class World {
   double get maxHp => (baseMaxHp + 25 * hideLv + 15 * metaLv('hp')) * charHp;
   double get speed =>
       baseSpeed * (1 + 0.10 * windLv + 0.04 * metaLv('spd')) * charSpeed * (berserkT > 0 ? 1.18 : 1.0);
-  double get pickupRange => 58 + 16.0 * hungerLv + 8 * metaLv('pick');
+  double get pickupRange => 58 + 16.0 * hungerLv + 8 * metaLv('pick') + (sp('magnet') ? 80 : 0);
   double get dmgMult =>
-      (1 + 0.12 * wildLv + 0.05 * metaLv('atk')) * charDmg * (berserkT > 0 ? 1.35 : 1.0);
-  double get fireMult => (1 + 0.10 * rageLv) * (berserkT > 0 ? 1.6 : 1.0);
+      (1 + 0.12 * wildLv + 0.05 * metaLv('atk')) *
+      charDmg *
+      (berserkT > 0 ? 1.35 : 1.0) *
+      (sp('fury') ? 1.25 : 1.0);
+  double get fireMult => (1 + 0.10 * rageLv) * (berserkT > 0 ? 1.6 : 1.0) * (sp('haste') ? 1.3 : 1.0);
+  double get armorMult => sp('armor') ? 0.78 : 1.0; // 받는 피해 배수
   bool get rageReady => rage >= rageMax;
 
   void toggleMute() => sfx.muted = !sfx.muted;
@@ -628,6 +689,9 @@ class World {
     spikeLv = 0;
     clawEvo = fangEvo = roarEvo = false;
     wildLv = hideLv = windLv = hungerLv = rageLv = 0;
+    specials.clear();
+    specialChoice = false;
+    _tigerMile = 0;
     clawT = 0;
     roarT = 0;
     boltT = 0;
@@ -637,6 +701,7 @@ class World {
     orbitAngle = 0;
     enemies.clear();
     bullets.clear();
+    eBullets.clear();
     orbs.clear();
     parts.clear();
     pulses.clear();
@@ -664,7 +729,8 @@ class World {
     _lowCd = 0;
     _streakKillMark = 0;
     stage = 1;
-    _stageT = 45;
+    pendingStage = 1;
+    _stageT = _stageDuration(1);
     _applyStageDiff();
     jActive = false;
     dirx = diry = 0;
@@ -785,9 +851,8 @@ class World {
     if (petHappyT > 0) petHappyT = max(0, petHappyT - dt);
     if (petLineT > 0) petLineT -= dt;
     if (_petSayCd > 0) _petSayCd -= dt;
-    if (_petSayCd <= 0 && rng.nextDouble() < dt * 0.14) {
-      _petSay(_pick(const ['두근두근', '히힝~', '크항!', '...', '대장님 멋져요']));
-    }
+    // 재생 특별스킬 — 매초 최대체력의 1.2% 회복
+    if (sp('regen') && hp < maxHp) hp = min(maxHp, hp + maxHp * 0.012 * dt);
     final moving0 = dirx != 0 || diry != 0;
     final tpx = moving0 ? px - dirx * 28 : px - 22;
     final tpy = moving0 ? py - diry * 28 : py - 24;
@@ -821,11 +886,11 @@ class World {
       _petSay('크항—!');
       _say(_pick(Tiny.streak), face: '😼');
     }
-    // 스테이지 자동 상승 — 플레이할수록 점점 사나워짐 (45초마다 +1)
+    // 스테이지 자동 상승 — 초반은 빠르게(짧은 간격), 갈수록 천천히. 한 칸의 난이도 간극은 완만.
     _stageT -= dt;
     if (_stageT <= 0) {
-      _stageT = 45;
       stage += 1;
+      _stageT = _stageDuration(stage);
       if (stage > maxStage) {
         maxStage = stage;
         _saveMeta();
@@ -849,6 +914,7 @@ class World {
     _updateBullets(dt);
     _updateEnemies(dt);
     _collide(dt);
+    _updateEBullets(dt);
     _updateOrbs(dt);
     _updateFx(dt);
 
@@ -866,15 +932,29 @@ class World {
         xp -= xpNext;
       }
       level += 1;
-      xpNext = (xpNext * 1.26 + 2).roundToDouble();
+      xpNext = (xpNext * 1.22 + 2).roundToDouble();
       _hapticBig = true;
       _shakeAdd(9);
       petHappyT = 1.6; // 펫이 신남
       _petSay('오— 강해졌다!');
       sfx.play('level');
-      _say(_pick(Tiny.level), force: true, face: '😺');
       pulses.add(Pulse(px, py, 120, 0.5, P.gold));
-      _openLevelUp();
+      // 양→호랑이 변신 마일스톤 대사 (USP)
+      if (_tigerMile < 1 && level >= 5) {
+        _tigerMile = 1;
+        _say(Tiny.tiger[0], force: true, face: '😼');
+      } else if (_tigerMile < 2 && level >= 13) {
+        _tigerMile = 2;
+        _say(Tiny.tiger[1], force: true, face: '🔥');
+      } else {
+        _say(_pick(Tiny.level), force: true, face: '😺');
+      }
+      // 10레벨마다 특별스킬 선택(남은 게 있으면) — 판을 뒤집는 한 방
+      if (level % 10 == 0 && specials.length < kSpecials.length) {
+        _openSpecial();
+      } else {
+        _openLevelUp();
+      }
     }
   }
 
@@ -914,20 +994,38 @@ class World {
       x = w + 20;
       y = rng.nextDouble() * h;
     }
-    // 타입 결정 (시간에 따라 흉포해짐) — 초반은 잡몹만, 점진적으로 강적 등장
+    // 타입 결정 — 스테이지가 오를수록 새 적 해금(다양성). 초반은 잡몹·떼거리 위주.
     EType t = EType.grunt;
     final roll = rng.nextDouble();
-    if (time > 78 && roll < 0.13) {
+    if (stage >= 5 && roll < 0.10) {
+      t = EType.bomber; // 자폭
+    } else if (stage >= 4 && roll < 0.22) {
+      t = EType.shooter; // 원거리
+    } else if (stage >= 3 && roll < 0.34) {
+      t = EType.splitter; // 분열
+    } else if (time > 70 && roll < 0.46) {
       t = EType.tank;
-    } else if (time > 42 && roll < 0.32) {
+    } else if (time > 26 && roll < 0.62) {
       t = EType.fast;
+    } else if (stage >= 2 && roll < 0.80) {
+      t = EType.swarm; // 떼거리
     }
     final base = (9 + time * 0.5) * diff;
     Enemy e;
     if (t == EType.fast) {
       e = Enemy(_eid++, x, y, base * 0.65, base * 0.65, 72 + time * 0.17, (4 + time * 0.03) * diff, 9, t);
+    } else if (t == EType.swarm) {
+      e = Enemy(_eid++, x, y, base * 0.4, base * 0.4, 90 + time * 0.2, (3 + time * 0.02) * diff, 7, t);
     } else if (t == EType.tank) {
       e = Enemy(_eid++, x, y, base * 3.0, base * 3.0, 30 + time * 0.05, (8.5 + time * 0.05) * diff, 18, t);
+    } else if (t == EType.splitter) {
+      e = Enemy(_eid++, x, y, base * 1.3, base * 1.3, 40 + time * 0.08, (5 + time * 0.03) * diff, 14, t);
+    } else if (t == EType.bomber) {
+      e = Enemy(_eid++, x, y, base * 0.9, base * 0.9, 54 + time * 0.12, (4 + time * 0.02) * diff, 13, t);
+    } else if (t == EType.shooter) {
+      final se = Enemy(_eid++, x, y, base * 0.8, base * 0.8, 26 + time * 0.05, (4 + time * 0.02) * diff, 11, t);
+      se.atkT = 0.8 + rng.nextDouble() * 1.6; // 첫 사격 분산
+      e = se;
     } else {
       e = Enemy(_eid++, x, y, base, base, 44 + time * 0.12, (4.5 + time * 0.03) * diff, 11, t);
     }
@@ -976,7 +1074,11 @@ class World {
             bullets.add(Bullet(px, py, cos(a) * 360, sin(a) * 360, dmg, 6, 1.5, pierce));
           }
         } else {
-          final n = 1 + (clawLv >= 2 ? 1 : 0) + (clawLv >= 4 ? 1 : 0) + (clawLv >= 6 ? 1 : 0);
+          final n = 1 +
+              (clawLv >= 2 ? 1 : 0) +
+              (clawLv >= 4 ? 1 : 0) +
+              (clawLv >= 6 ? 1 : 0) +
+              (sp('multi') ? 1 : 0);
           final baseAng = atan2(target!.y - py, target.x - px);
           for (int i = 0; i < n; i++) {
             final a = baseAng + (i - (n - 1) / 2) * 0.18;
@@ -1027,7 +1129,7 @@ class World {
       if (spikeT <= 0) {
         spikeT = ((1.8 * pow(0.92, spikeLv - 1)) / fireMult).toDouble();
         final radius = 42 + spikeLv * 7.0;
-        final dmg = (8 + spikeLv * 5) * dmgMult;
+        final dmg = (8 + spikeLv * 6) * dmgMult;
         final ox = px + (rng.nextDouble() - 0.5) * 160;
         final oy = py + (rng.nextDouble() - 0.5) * 160;
         for (final e in enemies) {
@@ -1047,7 +1149,7 @@ class World {
         final cd = (2.6 * pow(0.93, roarLv - 1)) / fireMult;
         roarT = cd.toDouble();
         final radius = (70 + roarLv * 16.0) * (roarEvo ? 1.8 : 1.0);
-        final dmg = (8 + roarLv * 6) * dmgMult * (roarEvo ? 2.2 : 1.0);
+        final dmg = (8 + roarLv * 7) * dmgMult * (roarEvo ? 2.2 : 1.0);
         final push = roarEvo ? 30.0 : 14.0;
         for (final e in enemies) {
           final d = sqrt((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py));
@@ -1085,15 +1187,54 @@ class World {
 
   // ── 적 ──
   void _updateEnemies(double dt) {
+    final slowMul = sp('slow') ? 0.82 : 1.0;
     for (final e in enemies) {
       final dx = px - e.x, dy = py - e.y;
       final d = sqrt(dx * dx + dy * dy);
+      double sm = slowMul;
+      if (e.chill > 0) {
+        e.chill -= dt;
+        sm *= 0.4; // 서리 둔화
+      }
       if (d > 0.1) {
-        e.x += dx / d * e.speed * dt;
-        e.y += dy / d * e.speed * dt;
+        e.x += dx / d * e.speed * sm * dt;
+        e.y += dy / d * e.speed * sm * dt;
       }
       if (e.flash > 0) e.flash -= dt * 4;
+      // 원거리 적 — 주기적으로 플레이어를 향해 투사체 발사
+      if (e.type == EType.shooter) {
+        e.atkT -= dt;
+        if (e.atkT <= 0) {
+          e.atkT = 2.2;
+          if (d > 1 && eBullets.length < 80) {
+            const pspd = 165.0;
+            eBullets.add(EBullet(e.x, e.y, dx / d * pspd, dy / d * pspd, e.dmg * 1.4 + 3, 4.0));
+          }
+        }
+      }
     }
+  }
+
+  // 원거리 적 투사체 — 이동 + 플레이어 충돌
+  void _updateEBullets(double dt) {
+    for (final b in eBullets) {
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.life -= dt;
+      if (b.life <= 0 || b.x < -30 || b.x > w + 30 || b.y < -30 || b.y > h + 30) {
+        b.dead = true;
+        continue;
+      }
+      final rr = pr + 5;
+      if ((b.x - px) * (b.x - px) + (b.y - py) * (b.y - py) <= rr * rr) {
+        hp -= b.dmg * armorMult;
+        b.dead = true;
+        contactCdView = 0.12;
+        _hapticHit = true;
+        _shakeAdd(3);
+      }
+    }
+    eBullets.removeWhere((b) => b.dead);
   }
 
   // ── 충돌 ──
@@ -1124,7 +1265,7 @@ class World {
     if (fangLv > 0) {
       final cnt = fangLv + (fangEvo ? 3 : 0);
       final orad = (60 + fangLv * 4.0) * (fangEvo ? 1.4 : 1.0);
-      final fdps = (22 + fangLv * 14) * dmgMult * (fangEvo ? 1.9 : 1.0);
+      final fdps = (20 + fangLv * 12) * dmgMult * (fangEvo ? 1.9 : 1.0);
       final fr = fangEvo ? 17.0 : 13.0;
       for (int i = 0; i < cnt; i++) {
         final a = orbitAngle + i * 6.2831853 / cnt;
@@ -1143,19 +1284,20 @@ class World {
       }
     }
 
-    // 적 vs 플레이어 (접촉 지속 데미지)
+    // 적 vs 플레이어 (접촉 지속 데미지) — 강철 가죽(armor) 반영
     contactCdView = max(0.0, contactCdView - dt);
     for (final e in enemies) {
       final rr = e.radius + pr;
       if ((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py) <= rr * rr) {
-        hp -= e.dmg * dt;
+        hp -= e.dmg * dt * armorMult;
         contactCdView = 0.12;
         _hapticHit = true;
         _shakeAdd(3);
       }
     }
 
-    // 죽은 적 처리 → 구슬/파티클
+    // 죽은 적 처리 → 구슬/파티클 (반복 중 enemies에 직접 추가 금지 → newborn에 모았다가 뒤에서 add)
+    final newborn = <Enemy>[];
     for (final e in enemies) {
       if (e.hp <= 0 && !e.dead) {
         e.dead = true;
@@ -1163,12 +1305,44 @@ class World {
         petHappyT = 1.0; // 펫이 기뻐함
         // [포식] 삼켜서 회복 + 성장
         devour += 1;
-        final heal = e.type == EType.boss
+        double heal = e.type == EType.boss
             ? 12.0
             : (e.type == EType.tank ? 2.5 : (e.type == EType.fast ? 0.4 : 0.6));
+        if (sp('lifesteal')) heal *= 3; // 흡혈
         if (hp < maxHp) {
           hp = min(maxHp, hp + heal);
           if (heal >= 2.5) _float(e.x, e.y - e.radius, '+${heal.round()}♥', P.green, 13);
+        }
+        // 분열 — 죽으면 작은 떼거리 둘로 갈라짐
+        if (e.type == EType.splitter) {
+          final cb = (9 + time * 0.5) * diff * 0.45;
+          for (int s = 0; s < 2; s++) {
+            final ang = rng.nextDouble() * 6.2831853;
+            newborn.add(Enemy(_eid++, e.x + cos(ang) * 14, e.y + sin(ang) * 14, cb, cb,
+                88 + time * 0.12, (3.5 + time * 0.02) * diff, 7, EType.swarm));
+          }
+        }
+        // 자폭 — 죽을 때 주변 폭발(플레이어 피해 + 연출)
+        if (e.type == EType.bomber) {
+          const er = 72.0;
+          final ed = (16 + time * 0.1) * diff;
+          final pd = sqrt((px - e.x) * (px - e.x) + (py - e.y) * (py - e.y));
+          if (pd < er + pr) hp -= ed * armorMult;
+          pulses.add(Pulse(e.x, e.y, er, 0.4, P.red));
+          _float(e.x, e.y - e.radius, '폭발!', P.red, 16);
+          _shakeAdd(6);
+        }
+        // 연쇄 폭발(특별스킬) — 처치 시 주변 적에게 피해
+        if (sp('explode')) {
+          const xr = 58.0;
+          final xd = (12 + level * 2.0) * dmgMult;
+          for (final o in enemies) {
+            if (o.dead || o.id == e.id) continue;
+            if ((o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y) <= xr * xr) {
+              _hurt(o, xd);
+            }
+          }
+          pulses.add(Pulse(e.x, e.y, xr, 0.3, P.gold));
         }
         rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)) * diff);
         if (e.type == EType.boss) {
@@ -1184,21 +1358,29 @@ class World {
           orbs.add(Orb(e.x + (rng.nextDouble() - 0.5) * 24, e.y + (rng.nextDouble() - 0.5) * 24,
               e.type == EType.boss ? 4.0 : 1.0));
         }
-        final col = e.type == EType.fast ? P.purple : (e.type == EType.tank ? P.blood : P.muted);
+        final col = e.type == EType.fast
+            ? P.purple
+            : (e.type == EType.tank
+                ? P.blood
+                : (e.type == EType.bomber
+                    ? const Color(0xFFE8702E)
+                    : (e.type == EType.splitter ? P.green : P.muted)));
         for (int i = 0; i < (e.type == EType.boss ? 22 : 7); i++) {
           final a = rng.nextDouble() * 6.2831853;
-          final sp = 40 + rng.nextDouble() * 120;
-          parts.add(Particle(e.x, e.y, cos(a) * sp, sin(a) * sp, 0.4 + rng.nextDouble() * 0.3,
+          final spd = 40 + rng.nextDouble() * 120;
+          parts.add(Particle(e.x, e.y, cos(a) * spd, sin(a) * spd, 0.4 + rng.nextDouble() * 0.3,
               2 + rng.nextDouble() * 3, col));
         }
       }
     }
     enemies.removeWhere((e) => e.dead);
+    if (newborn.isNotEmpty) enemies.addAll(newborn);
   }
 
   void _hurt(Enemy e, double dmg) {
     e.hp -= dmg;
     e.flash = 1;
+    if (sp('freeze') && e.type != EType.boss) e.chill = 1.2; // 서리 손길
   }
 
   // ── 구슬 ──
@@ -1215,7 +1397,7 @@ class World {
           o.y += dy / d * pull * dt;
         }
         if (d < 16) {
-          xp += o.value * diff; // 난이도 높을수록 경험치 ↑(빠른 성장)
+          xp += o.value * diff * (sp('magnet') ? 1.3 : 1.0); // 난이도·자성 보정
           o.dead = true;
           sfx.play('pick', gapMs: 35);
         }
@@ -1309,9 +1491,25 @@ class World {
     choices = out;
   }
 
+  // 10레벨마다 — 특별스킬 3택(보유하지 않은 것 중에서). 즉시 효과(getter로 반영).
+  void _openSpecial() {
+    phase = GPhase.levelup;
+    specialChoice = true;
+    final avail = kSpecials.where((s) => !specials.contains(s.id)).toList()..shuffle(rng);
+    final out = <Upgrade>[];
+    for (final s in avail.take(3)) {
+      out.add(Upgrade(s.icon, s.name, s.desc, () {
+        specials.add(s.id);
+        if (s.id == 'regen' || s.id == 'lifesteal') hp = min(maxHp, hp + maxHp * 0.15);
+      }));
+    }
+    choices = out;
+  }
+
   void pick(Upgrade u) {
     u.apply();
     choices = [];
+    specialChoice = false;
     phase = GPhase.playing;
   }
 
@@ -1374,6 +1572,15 @@ class World {
     _loadRecords();
     _loadMeta();
     _checkDaily();
+  }
+
+  // 세이브 삭제 — 해당 슬롯의 기록·메타를 영구 제거. 현재 슬롯이면 초기화 상태로 리로드.
+  void deleteSlot(int s) {
+    try {
+      html.window.localStorage.remove('surv_rec_$s');
+      html.window.localStorage.remove('surv_meta_$s');
+    } catch (_) {}
+    if (s == slot) selectSlot(s); // 빈 슬롯으로 다시 로드(전부 초기화)
   }
 
   // 데일리 보너스 — 하루 첫 접속 시 송곳니 +30 (리텐션, 비강제)
@@ -1655,26 +1862,24 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ── 타이니 호출 버튼 (시리/빅스비식) — 어흥 버튼 위(좌하단). 누르기 전 살짝 반투명 ──
+  // ── 타이니 호출 버튼 (시리/빅스비식) — 어흥 버튼 위(좌하단). 불투명 ──
   Widget _tinyCallButton() {
     return Positioned(
       left: 34,
       bottom: 110,
       child: GestureDetector(
         onTap: () => setState(() => world.openMenu()),
-        child: Opacity(
-          opacity: 0.8,
-          child: Container(
-            width: 46,
-            height: 46,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.black.withOpacity(0.45),
-              border: Border.all(color: P.gold.withOpacity(0.75), width: 1.5),
-            ),
-            child: const Text('🐯', style: TextStyle(fontSize: 22)),
+        child: Container(
+          width: 46,
+          height: 46,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: P.panel,
+            border: Border.all(color: P.gold, width: 1.8),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 6)],
           ),
+          child: const Text('🐯', style: TextStyle(fontSize: 22)),
         ),
       ),
     );
@@ -1701,30 +1906,35 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             border: Border.all(color: world.threatColor.withOpacity(0.7)),
           ),
           child: Column(children: [
-            // 스테이지 선택 (도달한 최고까지만) — 올리면 강하고 보상↑, 내리면 수월
+            // 사냥터(스테이지) 선택 — ±로 고른 뒤, 아래 '이동' 버튼으로 확정해 들어간다.
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('스테이지 선택', style: TextStyle(color: P.muted, fontSize: 12)),
+              const Text('사냥터 선택', style: TextStyle(color: P.muted, fontSize: 12)),
               Row(children: [
-                _stageBtn('−', world.stage > 1, () => setState(() => world.setStage(world.stage - 1))),
+                _stageBtn('−', world.pendingStage > 1,
+                    () => setState(() => world.pendingStage = (world.pendingStage - 1).clamp(1, world.maxStage))),
                 const SizedBox(width: 10),
-                Text('STAGE ${world.stage}',
+                Text('STAGE ${world.pendingStage}',
                     style: TextStyle(
-                        color: world.threatColor, fontSize: 17, fontWeight: FontWeight.bold)),
+                        color: world.diffForStage(world.pendingStage) < 1.15
+                            ? P.green
+                            : (world.diffForStage(world.pendingStage) < 1.7 ? P.gold : P.red),
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold)),
                 const SizedBox(width: 10),
-                _stageBtn('＋', world.stage < world.maxStage,
-                    () => setState(() => world.setStage(world.stage + 1))),
+                _stageBtn('＋', world.pendingStage < world.maxStage,
+                    () => setState(() => world.pendingStage = (world.pendingStage + 1).clamp(1, world.maxStage))),
               ]),
             ]),
             const SizedBox(height: 4),
             Align(
               alignment: Alignment.centerRight,
-              child: Text('최고 도달 STAGE ${world.maxStage} 까지 선택 가능',
+              child: Text('현재 STAGE ${world.stage} · 최고 STAGE ${world.maxStage}까지 이동 가능',
                   style: const TextStyle(color: P.muted, fontSize: 10)),
             ),
             const SizedBox(height: 6),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
               const Text('적 강함 (보상도 비례↑)', style: TextStyle(color: P.muted, fontSize: 12)),
-              Text('×${world.diff.toStringAsFixed(2)}',
+              Text('×${world.diffForStage(world.pendingStage).toStringAsFixed(2)}',
                   style: TextStyle(color: world.threatColor, fontSize: 14, fontWeight: FontWeight.bold)),
             ]),
             const SizedBox(height: 6),
@@ -1740,12 +1950,18 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         const SizedBox(height: 16),
         _bigBtn('▶  이어하기', P.gold, () => setState(() => world.resume())),
         const SizedBox(height: 10),
+        // 포기 대신 '사냥터 이동' — 선택한 STAGE로 옮겨 다시 사냥(낮추면 수월, 올리면 보상↑)
+        _bigBtn(
+            world.pendingStage == world.stage
+                ? '🐾  STAGE ${world.pendingStage} 유지'
+                : '🐾  STAGE ${world.pendingStage} (으)로 이동',
+            P.cyan,
+            () => setState(() => world.travelToStage())),
+        const SizedBox(height: 10),
         _bigBtn('🦷  전리품 상점', P.panel, () => setState(() {
               world.shopReturn = GPhase.menu;
               world.phase = GPhase.shop;
             }), dark: false),
-        const SizedBox(height: 10),
-        _bigBtn('🏳  포기하고 마치기', P.blood, () => setState(() => world.giveUp()), dark: false),
         const SizedBox(height: 10),
         // [내부 테스트 치트] 타이니 +10 레벨
         _bigBtn('🐞  치트: +10 레벨', const Color(0xFF2A3A2A),
@@ -1853,6 +2069,33 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     ]);
   }
 
+  // 세이브 삭제 확인 — 실수 방지(되돌릴 수 없음)
+  void _confirmDeleteSlot(int n) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: P.panel,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('세이브 삭제', style: TextStyle(color: P.parch, fontWeight: FontWeight.bold)),
+        content: Text('슬롯 $n의 송곳니·강화·업적·기록이 모두 사라집니다.\n되돌릴 수 없습니다. 삭제할까요?',
+            style: const TextStyle(color: P.muted, fontSize: 13, height: 1.4)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('취소', style: TextStyle(color: P.muted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              setState(() => world.deleteSlot(n));
+            },
+            child: const Text('삭제', style: TextStyle(color: P.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── 타이틀 ──
   Widget _title() {
     final sel = kChars[world.charIndex.clamp(0, kChars.length - 1)];
@@ -1884,78 +2127,82 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               final n = i + 1;
               final on = world.slot == n;
               final info = world.slotInfo(n);
-              return GestureDetector(
-                onTap: () => setState(() => world.selectSlot(n)),
-                child: Container(
-                  width: 98,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 5),
-                  decoration: BoxDecoration(
-                    color: on ? P.gold.withOpacity(0.16) : Colors.black.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(11),
-                    border: Border.all(color: on ? P.gold : P.line, width: on ? 2 : 1),
+              return Stack(children: [
+                GestureDetector(
+                  onTap: () => setState(() => world.selectSlot(n)),
+                  child: Container(
+                    width: 98,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.fromLTRB(5, 9, 5, 9),
+                    decoration: BoxDecoration(
+                      color: on ? P.gold.withOpacity(0.16) : Colors.black.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(color: on ? P.gold : P.line, width: on ? 2 : 1),
+                    ),
+                    child: Column(children: [
+                      Text('슬롯 $n',
+                          style: TextStyle(
+                              color: on ? Colors.white : P.muted,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 3),
+                      Text(
+                          info == null
+                              ? '빈 슬롯'
+                              : '🦷${info['fangs']}\n최고 ${World.mmss((info['bt'] as num).toDouble())}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: P.muted, fontSize: 10, height: 1.3)),
+                    ]),
                   ),
-                  child: Column(children: [
-                    Text('슬롯 $n',
-                        style: TextStyle(
-                            color: on ? Colors.white : P.muted,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 3),
-                    Text(
-                        info == null
-                            ? '빈 슬롯'
-                            : '🦷${info['fangs']}\n최고 ${World.mmss((info['bt'] as num).toDouble())}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: P.muted, fontSize: 10, height: 1.3)),
-                  ]),
                 ),
-              );
+                // 세이브 삭제 (데이터 있는 슬롯만) — 두 번 눌러 확인
+                if (info != null)
+                  Positioned(
+                    top: 2,
+                    right: 6,
+                    child: GestureDetector(
+                      onTap: () => _confirmDeleteSlot(n),
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: P.blood.withOpacity(0.9),
+                          border: Border.all(color: Colors.white.withOpacity(0.6)),
+                        ),
+                        child: const Text('✕',
+                            style: TextStyle(
+                                color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ),
+              ]);
             }),
           ),
           const SizedBox(height: 18),
-          const Text('맹수를 고르십시오',
-              style: TextStyle(color: P.parch, fontSize: 14, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(kChars.length, (i) {
-              final c = kChars[i];
-              final on = i == world.charIndex;
-              return GestureDetector(
-                onTap: () => setState(() => world.charIndex = i),
-                child: Container(
-                  width: 92,
-                  margin: const EdgeInsets.symmetric(horizontal: 5),
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-                  decoration: BoxDecoration(
-                    color: on ? c.color.withOpacity(0.16) : Colors.black.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: on ? c.color : P.line, width: on ? 2.2 : 1),
-                  ),
-                  child: Column(children: [
-                    Text(c.icon, style: const TextStyle(fontSize: 30)),
-                    const SizedBox(height: 5),
-                    Text(c.name,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: on ? Colors.white : P.muted,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold)),
-                  ]),
-                ),
-              );
-            }),
+          // 단일 주인공 — 호랑이가 되고 싶은 양 (사냥할수록 호랑이로 변신)
+          Container(
+            width: 230,
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+            decoration: BoxDecoration(
+              color: sel.color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: sel.color, width: 2),
+            ),
+            child: Column(children: [
+              const Text('🐑  →  🐯', style: TextStyle(fontSize: 26)),
+              const SizedBox(height: 6),
+              Text(sel.name,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Text(sel.desc,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: P.parch, fontSize: 12, height: 1.4)),
+            ]),
           ),
           const SizedBox(height: 10),
-          SizedBox(
-            height: 40,
-            child: Text(sel.desc,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: P.parch, fontSize: 12.5, height: 1.4)),
-          ),
-          const SizedBox(height: 6),
           if (world.bestTime > 0)
             Text('최고 기록 ${World.mmss(world.bestTime)} · ${world.bestKills}킬',
                 style: const TextStyle(color: P.muted, fontSize: 12)),
@@ -2246,11 +2493,15 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       alignment: Alignment.center,
       padding: const EdgeInsets.all(22),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('⚡ LEVEL UP',
+        Text(world.specialChoice ? '✨ 특별 스킬' : '⚡ LEVEL UP',
             style: TextStyle(
-                color: P.gold, fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: 3)),
+                color: world.specialChoice ? P.purple : P.gold,
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 3)),
         const SizedBox(height: 4),
-        Text('Lv ${world.level}', style: const TextStyle(color: P.muted, fontSize: 13)),
+        Text(world.specialChoice ? 'Lv ${world.level} · 판을 뒤집을 한 방을 고르십시오' : 'Lv ${world.level}',
+            style: const TextStyle(color: P.muted, fontSize: 13)),
         const SizedBox(height: 12),
         // 타이니가 레벨업마다 떠받든다 (뽕)
         Container(
@@ -2601,6 +2852,18 @@ class WorldPainter extends CustomPainter {
       _glow(canvas, b.x, b.y, b.radius * 0.7, P.goldSoft);
     }
 
+    // 원거리 적 투사체 (붉은 발광 — 위협)
+    for (final b in w.eBullets) {
+      canvas.drawLine(
+          Offset(b.x - b.vx * 0.03, b.y - b.vy * 0.03),
+          Offset(b.x, b.y),
+          Paint()
+            ..strokeWidth = 3
+            ..strokeCap = StrokeCap.round
+            ..color = P.red.withOpacity(0.4));
+      _glow(canvas, b.x, b.y, 4.0, P.red, core: 0.9);
+    }
+
     // 회전 송곳니 (진화 시 더 많고 크게)
     if (w.fangLv > 0) {
       final cnt = w.fangLv + (w.fangEvo ? 3 : 0);
@@ -2684,6 +2947,18 @@ class WorldPainter extends CustomPainter {
         break;
       case EType.tank:
         base = P.red;
+        break;
+      case EType.swarm:
+        base = const Color(0xFF6FB7C8);
+        break;
+      case EType.splitter:
+        base = P.green;
+        break;
+      case EType.bomber:
+        base = const Color(0xFFE8702E);
+        break;
+      case EType.shooter:
+        base = const Color(0xFFD060C0);
         break;
       case EType.boss:
         base = const Color(0xFFFF4533);
@@ -2769,72 +3044,66 @@ class WorldPainter extends CustomPainter {
     }
   }
 
-  // 플레이어 — 캐릭터별 외형 + 코드 절차 애니메이션(숨쉬기·통통·눈깜빡·꼬리). 귀엽게.
+  // 플레이어 — '호랑이가 되고 싶은 양'. 성장(tigerProg)에 따라 양→호랑이로 모핑.
+  //  양: 폭신한 양털·둥근 귀·순한 눈 / 호랑이: 뾰족 귀·줄무늬 마스크·송곳니·사나운 눈매.
   void _player(Canvas canvas) {
     final hurt = w.contactCdView > 0;
-    final id = w.charIndex.clamp(0, kChars.length - 1);
-    final ch = kChars[id];
-    final col = hurt ? P.red : w.skinColor; // 코스메틱 스킨 색 적용
-    final r = w.pr * w.growScale; // 포식할수록 시각적으로 커짐(히트박스는 w.pr 유지)
+    final p = w.tigerProg.clamp(0.0, 1.0); // 0=양, 1=완전한 호랑이
+    const sheepCol = Color(0xFFF3ECDF); // 양털 크림색
+    final col = hurt ? P.red : Color.lerp(sheepCol, w.skinColor, p)!; // 성장할수록 스킨색(호랑이)로
+    final r = w.pr * w.growScale;
     final t = w.time;
     final moving = w.dirx != 0 || w.diry != 0;
-    // 통통 튀는 숨쉬기/걸음 + squash&stretch
     final bob = sin(t * (moving ? 10.0 : 3.0));
     final cx = w.px;
     final cy = w.py + bob * (moving ? 2.0 : 1.0);
-    final sq = 1 + (moving ? bob * 0.10 : bob * 0.045); // 세로 스케일
-    final fw = r * 2 / (1 + (sq - 1) * 0.5); // 가로 보정
+    final sq = 1 + (moving ? bob * 0.10 : bob * 0.045);
+    final fw = r * 2 / (1 + (sq - 1) * 0.5);
     final fh = r * 2 * sq;
+    final stripeCol = const Color(0xFF3A2606);
 
     // 안광
     canvas.drawCircle(Offset(cx, cy), r * 3.0, Paint()..color = col.withOpacity(0.12));
 
-    // 꼬리 (뒤에서 살랑) — 버팔로는 생략
-    if (id != 2) {
-      final wag = sin(t * 5) * r * 1.4;
-      final tail = Path()
-        ..moveTo(cx, cy + r * 0.5)
-        ..quadraticBezierTo(cx + wag, cy + r * 1.3, cx + wag * 1.2, cy + r * 0.4);
-      canvas.drawPath(
-          tail,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 4
-            ..strokeCap = StrokeCap.round
-            ..color = col.withOpacity(0.9));
+    // 양털 — 머리 둘레의 폭신한 솜뭉치. 호랑이가 될수록 사라짐.
+    if (p < 0.97) {
+      final wool = Paint()..color = Color.lerp(Colors.white, sheepCol, 0.35)!.withOpacity((1 - p) * 0.95);
+      for (int i = 0; i < 9; i++) {
+        final a = i * 6.2831853 / 9 + t * 0.25;
+        canvas.drawCircle(Offset(cx + cos(a) * r * 0.92, cy + sin(a) * r * 0.92),
+            r * 0.46 * (1 - p * 0.55), wool);
+      }
     }
 
+    // 꼬리 (살랑)
+    final wag = sin(t * 5) * r * 1.4;
+    final tail = Path()
+      ..moveTo(cx, cy + r * 0.5)
+      ..quadraticBezierTo(cx + wag, cy + r * 1.3, cx + wag * 1.2, cy + r * 0.4);
+    canvas.drawPath(
+        tail,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4
+          ..strokeCap = StrokeCap.round
+          ..color = col.withOpacity(0.9));
+
     final earTwitch = sin(t * 2.3) * r * 0.08;
-    final earPaint = Paint()..color = col;
-    if (id == 1) {
-      // 흑표 — 길고 뾰족한 귀
-      final ears = Path()
-        ..moveTo(cx - r * 0.75, cy - r * 0.4)
-        ..lineTo(cx - r * 0.45 + earTwitch, cy - r * 1.55)
-        ..lineTo(cx - r * 0.05, cy - r * 0.55)
-        ..close()
-        ..moveTo(cx + r * 0.75, cy - r * 0.4)
-        ..lineTo(cx + r * 0.45 - earTwitch, cy - r * 1.55)
-        ..lineTo(cx + r * 0.05, cy - r * 0.55)
-        ..close();
-      canvas.drawPath(ears, earPaint);
-    } else if (id == 2) {
-      // 무쇠뿔 — 양옆으로 휜 뿔
-      final hp = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 5
-        ..strokeCap = StrokeCap.round
-        ..color = const Color(0xFFE8E0D0);
-      final lh = Path()
-        ..moveTo(cx - r * 0.6, cy - r * 0.5)
-        ..quadraticBezierTo(cx - r * 1.5, cy - r * 1.0, cx - r * 1.3, cy - r * 1.6);
-      final rh = Path()
-        ..moveTo(cx + r * 0.6, cy - r * 0.5)
-        ..quadraticBezierTo(cx + r * 1.5, cy - r * 1.0, cx + r * 1.3, cy - r * 1.6);
-      canvas.drawPath(lh, hp);
-      canvas.drawPath(rh, hp);
-    } else {
-      // 백호 — 둥근 삼각 귀
+    // 양 귀 (둥글고 옆으로 처짐) — p가 낮을수록 진함
+    if (p < 0.97) {
+      final sp2 = Paint()..color = col.withOpacity(1 - p);
+      canvas.drawOval(
+          Rect.fromCenter(
+              center: Offset(cx - r * 0.95, cy - r * 0.3 + earTwitch), width: r * 0.7, height: r * 0.5),
+          sp2);
+      canvas.drawOval(
+          Rect.fromCenter(
+              center: Offset(cx + r * 0.95, cy - r * 0.3 - earTwitch), width: r * 0.7, height: r * 0.5),
+          sp2);
+    }
+    // 호랑이 귀 (뾰족) — p가 높을수록 진함
+    if (p > 0.03) {
+      final tp2 = Paint()..color = col.withOpacity(p);
       final ears = Path()
         ..moveTo(cx - r * 0.85, cy - r * 0.45)
         ..lineTo(cx - r * 0.45, cy - r * 1.2 - earTwitch)
@@ -2844,15 +3113,14 @@ class WorldPainter extends CustomPainter {
         ..lineTo(cx + r * 0.45, cy - r * 1.2 + earTwitch)
         ..lineTo(cx + r * 0.05, cy - r * 0.6)
         ..close();
-      canvas.drawPath(ears, earPaint);
+      canvas.drawPath(ears, tp2);
     }
 
-    // 얼굴 (squash 타원) — 발광 코어 + 밝은 림
-    canvas.drawOval(
-        Rect.fromCenter(center: Offset(cx, cy), width: fw * 1.7, height: fh * 1.7),
+    // 얼굴 (squash 타원)
+    canvas.drawOval(Rect.fromCenter(center: Offset(cx, cy), width: fw * 1.7, height: fh * 1.7),
         Paint()..color = col.withOpacity(0.18));
-    canvas.drawOval(Rect.fromCenter(center: Offset(cx, cy), width: fw, height: fh),
-        Paint()..color = col);
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy), width: fw, height: fh), Paint()..color = col);
     canvas.drawOval(
         Rect.fromCenter(center: Offset(cx, cy), width: fw, height: fh),
         Paint()
@@ -2860,26 +3128,25 @@ class WorldPainter extends CustomPainter {
           ..strokeWidth = 2
           ..color = Colors.white.withOpacity(0.85));
 
-    // 무늬 (백호=줄, 흑표=점)
-    if (id == 0) {
+    // 호랑이 줄무늬 마스크 ('호랑이 탈') — 성장할수록 진해짐
+    if (p > 0.05) {
       final st = Paint()
-        ..color = const Color(0xFF3A2606)
-        ..strokeWidth = 2
+        ..color = stripeCol.withOpacity(p * 0.9)
+        ..strokeWidth = 2.4
         ..strokeCap = StrokeCap.round;
-      canvas.drawLine(Offset(cx - r * 0.5, cy - r * 0.5), Offset(cx - r * 0.22, cy - r * 0.2), st);
-      canvas.drawLine(Offset(cx + r * 0.5, cy - r * 0.5), Offset(cx + r * 0.22, cy - r * 0.2), st);
-    } else if (id == 1) {
-      final sp = Paint()..color = Colors.black.withOpacity(0.25);
-      canvas.drawCircle(Offset(cx - r * 0.45, cy - r * 0.35), r * 0.1, sp);
-      canvas.drawCircle(Offset(cx + r * 0.45, cy - r * 0.35), r * 0.1, sp);
+      canvas.drawLine(Offset(cx - r * 0.5, cy - r * 0.55), Offset(cx - r * 0.2, cy - r * 0.2), st);
+      canvas.drawLine(Offset(cx + r * 0.5, cy - r * 0.55), Offset(cx + r * 0.2, cy - r * 0.2), st);
+      canvas.drawLine(Offset(cx, cy - r * 0.72), Offset(cx, cy - r * 0.36), st); // 이마 중앙
+      canvas.drawLine(Offset(cx - r * 0.72, cy + r * 0.08), Offset(cx - r * 0.42, cy + r * 0.14), st);
+      canvas.drawLine(Offset(cx + r * 0.72, cy + r * 0.08), Offset(cx + r * 0.42, cy + r * 0.14), st);
     }
 
-    // 볼터치(귀여움)
-    final blush = Paint()..color = const Color(0xFFFF8E8E).withOpacity(0.5);
+    // 볼터치(귀여움) — 호랑이가 되어도 약간 유지(무해+강함)
+    final blush = Paint()..color = const Color(0xFFFF8E8E).withOpacity(0.5 * (1 - p * 0.5));
     canvas.drawCircle(Offset(cx - r * 0.55, cy + r * 0.28), r * 0.16, blush);
     canvas.drawCircle(Offset(cx + r * 0.55, cy + r * 0.28), r * 0.16, blush);
 
-    // 눈 (주기적 깜빡임) + 큰 눈망울 + 하이라이트
+    // 눈
     final blink = (t % 3.1) < 0.13;
     final ey = cy - r * 0.05;
     final eL = Offset(cx - r * 0.38, ey), eR = Offset(cx + r * 0.38, ey);
@@ -2899,8 +3166,37 @@ class WorldPainter extends CustomPainter {
       canvas.drawCircle(eL.translate(-r * 0.06, -r * 0.07), r * 0.07, hi);
       canvas.drawCircle(eR.translate(-r * 0.06, -r * 0.07), r * 0.07, hi);
     }
+    // 사나운 눈매(호랑이) — 성장 시 눈썹이 짙어짐
+    if (p > 0.3) {
+      final browA = ((p - 0.3) * 1.4).clamp(0.0, 1.0);
+      final brow = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.2
+        ..strokeCap = StrokeCap.round
+        ..color = stripeCol.withOpacity(browA);
+      canvas.drawLine(Offset(cx - r * 0.56, ey - r * 0.34), Offset(cx - r * 0.22, ey - r * 0.16), brow);
+      canvas.drawLine(Offset(cx + r * 0.56, ey - r * 0.34), Offset(cx + r * 0.22, ey - r * 0.16), brow);
+    }
     // 코
     canvas.drawCircle(Offset(cx, cy + r * 0.32), r * 0.1, dark);
+    // 송곳니(호랑이) — 성장할수록 또렷
+    if (p > 0.4) {
+      final fangA = ((p - 0.4) * 1.6).clamp(0.0, 1.0);
+      final fang = Paint()..color = Colors.white.withOpacity(fangA);
+      final ny = cy + r * 0.42;
+      final f1 = Path()
+        ..moveTo(cx - r * 0.18, ny)
+        ..lineTo(cx - r * 0.06, ny)
+        ..lineTo(cx - r * 0.12, ny + r * 0.24)
+        ..close();
+      final f2 = Path()
+        ..moveTo(cx + r * 0.18, ny)
+        ..lineTo(cx + r * 0.06, ny)
+        ..lineTo(cx + r * 0.12, ny + r * 0.24)
+        ..close();
+      canvas.drawPath(f1, fang);
+      canvas.drawPath(f2, fang);
+    }
   }
 
   @override
