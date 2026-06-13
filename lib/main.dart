@@ -14,7 +14,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 // 카메라 줌 아웃 — 논리 아레나 = 화면 / kZoom (더 넓어 보이게). 1.0=원본, <1=멀리.
-const double kZoom = 0.6;
+const double kZoom = 0.7;
 
 void main() => runApp(const SurvivorApp());
 
