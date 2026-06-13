@@ -516,6 +516,9 @@ class World {
   String bgKey = '';
   // 성능 진단 측정값(ms, 이동평균)
   double updMs = 0, paintMs = 0;
+  // 스파이크 진단: 최악 프레임(ms, 느리게 감쇠) + 최근 3초 끊김 횟수(직전 윈도 스냅샷)
+  double peakMs = 0; // 최근 본 가장 느린 프레임(천천히 감쇠 → 몇 초간 표시 유지)
+  int jankCnt = 0, jankBad = 0; // 직전 3초: 22ms(<45fps) / 40ms(<25fps) 초과 프레임 수
 
   double get critChance => 0.12 + 0.02 * metaLv('crit'); // 기본 12% + 메타 치명 강화
   double get comboDmg => 1.0 + (combo > 60 ? 60 : combo) * 0.004; // 콤보 공격 보너스(최대 +24%)
@@ -2288,10 +2291,31 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   GPhase _lastPhase = GPhase.title;
   double _fps = 60;
   int _gearFilter = 0; // 장비 슬롯 필터 0=전체 1=무기 2=방어구 3=장신구
+  double _jankClock = 0; // 끊김 집계 윈도(3초)
+  int _jank45 = 0, _jank25 = 0; // 현재 윈도 누적
   void _onTick(Duration elapsed) {
     final dt = _last == Duration.zero ? 0.0 : (elapsed - _last).inMicroseconds / 1000000.0;
     _last = elapsed;
     if (dt > 0.0001) _fps = _fps * 0.9 + (1.0 / dt) * 0.1; // FPS 이동평균(진단)
+    // 스파이크 진단 — 순간 프레임 ms 기준(평균이 아닌 최악값/끊김 수)
+    final frameMs = dt * 1000.0;
+    if (frameMs > world.peakMs) {
+      world.peakMs = frameMs;
+    } else {
+      world.peakMs *= 0.99; // 천천히 감쇠 → 최근 스파이크가 몇 초간 표시에 남음
+    }
+    if (dt > 0.0001) {
+      if (frameMs > 22.0) _jank45++; // <45fps
+      if (frameMs > 40.0) _jank25++; // <25fps
+      _jankClock += dt;
+      if (_jankClock >= 3.0) {
+        world.jankCnt = _jank45;
+        world.jankBad = _jank25;
+        _jank45 = 0;
+        _jank25 = 0;
+        _jankClock = 0;
+      }
+    }
     final wasPlaying = world.phase == GPhase.playing;
     final sw = Stopwatch()..start();
     world.update(dt);
@@ -3676,6 +3700,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     final pw = (iw * dpr).round(), ph = (ih * dpr).round();
     return '[어흥 진단]\n'
         'fps ${_fps.toStringAsFixed(1)} | update ${w.updMs.toStringAsFixed(2)}ms | paint ${w.paintMs.toStringAsFixed(2)}ms\n'
+        '최악프레임 ${w.peakMs.toStringAsFixed(1)}ms | 최근3초 끊김 <45fps ${w.jankCnt}회 / <25fps ${w.jankBad}회\n'
         'phase ${w.phase.name} stage ${w.stage} t ${w.time.toStringAsFixed(0)}s lv ${w.level} combo ${w.combo}\n'
         '엔티티: 적 ${w.enemies.length} / 탄 ${w.bullets.length} / 적탄 ${w.eBullets.length} / 구슬 ${w.orbs.length} / 픽업 ${w.pickups.length} / 입자 ${w.parts.length} / 펄스 ${w.pulses.length} / 플로트 ${w.floats.length}\n'
         '화면 ${iw}x$ih DPR ${dpr.toStringAsFixed(2)} 물리 ${pw}x$ph | zoom $kZoom | renderer html\n'
