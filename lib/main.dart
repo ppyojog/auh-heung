@@ -804,7 +804,7 @@ class World {
   double baseSpeed = 178; // 이동 빠르게(속도감)
   double pr = 11; // 반지름
   // 광기(어흥!) 궁극기 — 처치로 차오르고, 해방 시 화면 대포효 + 광폭화. 더 자주 터지게 최대치↓.
-  double rage = 0, rageMax = 60, berserkT = 0;
+  double rage = 0, rageMax = 75, berserkT = 0; // 밸런스: 충전량 ↑(궁극기 남발 방지)
   // 펫 타이니 — 플레이어를 졸졸 따라다니며 표정으로 반응 + 짧은 말풍선
   double petX = 0, petY = 0, petHappyT = 0;
   String petLine = '';
@@ -1481,7 +1481,7 @@ class World {
     if (phase != GPhase.playing || !rageReady) return;
     rage = 0;
     berserkT = 5.0;
-    final dmg = 60 + level * 12.0;
+    final dmg = 70 + level * 6.0; // 밸런스: 레벨 스케일 ↓(빌드를 압도하지 않게)
     for (final e in enemies) {
       _hurt(e, dmg, 'rage');
       final d = sqrt((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py));
@@ -1927,7 +1927,7 @@ class World {
       }
     }
     // 회전 송곳니 (지속 접촉) — _collide에서 처리
-    orbitAngle += dt * 2.6;
+    orbitAngle += dt * 3.4; // 밸런스: 회전 속도 ↑ → 송곳니 커버리지 증가
   }
 
   // ── 투사체 ──
@@ -2046,6 +2046,14 @@ class World {
     pickups.removeWhere((p) => p.dead);
   }
 
+  // 바닥 픽업 종류 추첨 — 폭탄은 데미지 지배 방지로 빈도를 낮춤(회복·자석 위주).
+  PickType _rollPickType() {
+    final r = rng.nextDouble();
+    if (r < 0.40) return PickType.heal;
+    if (r < 0.74) return PickType.magnet;
+    return PickType.bomb; // 26%
+  }
+
   void _collectPickup(PickType t) {
     _hapticBig = true;
     if (t == PickType.magnet) {
@@ -2061,8 +2069,9 @@ class World {
       pulses.add(Pulse(px, py, 160, 0.4, P.cyan));
       sfx.play('pick');
     } else if (t == PickType.bomb) {
-      // 화면 전체 폭발 (약한 적 청소)
-      final dmg = 50 + level * 9.0;
+      // 화면 전체 폭발 (약한 적 청소) — 플레이어 레벨이 아닌 '스테이지' 기준으로 스케일.
+      //  (밸런스: 레벨로 무한 스케일하면 빌드를 압도 → 스테이지 난이도에 비례하게 고정)
+      final dmg = 45 + stage * 12.0;
       for (final e in enemies) {
         _hurt(e, dmg, 'bomb');
       }
@@ -2187,10 +2196,11 @@ class World {
 
     // 회전 송곳니 vs 적 (지속 DPS) — 진화 시 '죽음의 고리'
     if (fangLv > 0) {
-      final cnt = fangLv + (fangEvo ? 3 : 0);
-      final orad = (60 + fangLv * 4.0) * (fangEvo ? 1.4 : 1.0);
-      final fdps = (20 + fangLv * 12) * dmgMult * (fangEvo ? 1.9 : 1.0);
-      final fr = fangEvo ? 17.0 : 13.0;
+      // 밸런스: 송곳니가 AoE 빌드에서도 '보이게' — 개수 +1(Lv1=2개)·히트반경↑·기본DPS↑
+      final cnt = fangLv + 1 + (fangEvo ? 3 : 0);
+      final orad = (58 + fangLv * 4.0) * (fangEvo ? 1.4 : 1.0);
+      final fdps = (28 + fangLv * 14) * dmgMult * (fangEvo ? 1.9 : 1.0);
+      final fr = fangEvo ? 24.0 : 19.0;
       for (int i = 0; i < cnt; i++) {
         final a = orbitAngle + i * 6.2831853 / cnt;
         final fx = px + cos(a) * orad;
@@ -2236,7 +2246,7 @@ class World {
         if (e.elite) {
           if (pickups.length < 8) {
             pickups.add(Pickup(e.x, e.y,
-                PickType.values[rng.nextInt(PickType.values.length)]));
+                _rollPickType()));
           }
           fangs += 8;
           ore += 4; // 엘리트 → 🔩 광석(장비 재화)
@@ -2296,7 +2306,8 @@ class World {
           }
           pulses.add(Pulse(e.x, e.y, xr, 0.3, P.gold));
         }
-        rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)) * diff);
+        // 밸런스: diff 곱 제거 — 고스테이지에서 궁극기가 더 자주 차던 문제(스팸) 해소(일정 속도로 충전)
+        rage = min(rageMax, rage + (e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1)).toDouble());
         if (e.type == EType.boss) {
           runBoss += 1;
           freePicks += 1; // 전리품 상자 → 무료 강화 선택
@@ -2324,7 +2335,7 @@ class World {
             : (e.type == EType.tank ? 0.16 : (e.type == EType.splitter ? 0.06 : 0.022));
         if (pickups.length < 6 && rng.nextDouble() < pdrop) {
           pickups.add(Pickup(e.x, e.y, // 무한 맵 — 죽은 자리에 정확히(클램프 X)
-              PickType.values[rng.nextInt(PickType.values.length)]));
+              _rollPickType()));
         }
         final col = e.type == EType.fast
             ? P.purple
@@ -5928,11 +5939,11 @@ class WorldPainter extends CustomPainter {
 
     // 회전 송곳니 (진화 시 더 많고 크게)
     if (w.fangLv > 0) {
-      final cnt = w.fangLv + (w.fangEvo ? 3 : 0);
-      final orad = (60 + w.fangLv * 4.0) * (w.fangEvo ? 1.4 : 1.0);
+      final cnt = w.fangLv + 1 + (w.fangEvo ? 3 : 0); // 로직과 동일(Lv1=2개)
+      final orad = (58 + w.fangLv * 4.0) * (w.fangEvo ? 1.4 : 1.0);
       final fHalo = Paint()..color = P.cyan.withOpacity(0.25);
       final fCore = Paint()..color = P.cyan;
-      final fr = w.fangEvo ? 8.0 : 6.0;
+      final fr = w.fangEvo ? 10.0 : 8.0;
       for (int i = 0; i < cnt; i++) {
         final a = w.orbitAngle + i * 6.2831853 / cnt;
         final fx = w.px + cos(a) * orad, fy = w.py + sin(a) * orad;
