@@ -692,8 +692,9 @@ class World {
 
   bool buyGear(String id) {
     final g = gearById(id);
-    if (g == null || g.dropOnly || ownedGear.contains(id) || fangs < g.cost) return false;
-    fangs -= g.cost;
+    if (g == null || g.dropOnly || ownedGear.contains(id) || ore < g.cost) return false;
+    ore -= g.cost; // 대장간은 🔩 광석으로
+
     ownedGear.add(id);
     equipped[g.slot] ??= id; // 첫 구매면 자동 장착
     _saveMeta();
@@ -963,10 +964,13 @@ class World {
   // 기록
   double bestTime = 0;
   int bestKills = 0;
-  // 메타 진행 — 영구 화폐 '송곳니' + 강화 레벨
-  int fangs = 0;
+  // 메타 진행 — 시스템별 분리 재화(각 특성에 맞는 보상). 죽어도 유지(로그라이트).
+  int fangs = 0; // 🦷 송곳니 — 사냥(처치/생존) → 단련·무늬
+  int essence = 0; // 💎 정수 — 스테이지 진행(스테이지업·보스) → 소굴
+  int ore = 0; // 🔩 광석 — 전리품/보스 → 대장간(장비)
   final Map<String, int> meta = {};
-  int runFangs = 0; // 이번 런에서 번 송곳니(사망 화면 표시)
+  int runFangs = 0, runEssence = 0, runOre = 0; // 이번 런 획득량(보상 화면 표시)
+  bool _runRewarded = false; // 런 보상 1회만 지급(사망/포기 중복 방지)
   List<Gear> runLoot = []; // 이번 런 종료 시 획득한 전리품(사망 화면 표시)
   int runLootFangs = 0; // 다 모아서 송곳니로 환산된 양
   // 환생(Prestige) — 100시간 성장 루프: 강화·송곳니를 리셋하는 대신 영구 배수 획득.
@@ -1008,8 +1012,8 @@ class World {
     final d = kDen.firstWhere((e) => e.id == id);
     if (denLv(id) >= d.maxLv) return false;
     final c = denCost(id);
-    if (fangs < c) return false;
-    fangs -= c;
+    if (essence < c) return false; // 소굴은 💎 정수로
+    essence -= c;
     den[id] = denLv(id) + 1;
     _saveMeta();
     return true;
@@ -1205,6 +1209,11 @@ class World {
     rerolls = 3 + (denLv('xp') ~/ 3);
     banishes = 2;
     bannedUp.clear();
+    // 런 보상 상태 리셋
+    _runRewarded = false;
+    runEssence = 0;
+    runOre = 0;
+    runLoot = [];
     portraitTier = 0;
     morphClock = 0;
     morphFromTier = 0;
@@ -1413,8 +1422,16 @@ class World {
         }
       }
       _applyStageDiff();
+      // 스테이지 1업마다 큰 보상 — 정수(소굴)+송곳니(단련) 즉시 지급(진행 보상감)
+      final eGain = 6 + stage * 2;
+      final fGain = 8 + stage * 2;
+      essence += eGain;
+      fangs += fGain;
+      _float(px, py - 72, '🎉 STAGE $stage  +💎$eGain  +🦷$fGain', P.gold, 16);
+      _flash(P.gold, 0.25);
       if (!unlockedSpeed) {
-        _say('스테이지 $stage 진입! 더 사나운 놈들이 몰려옵니다!', force: true, face: '😼');
+        _say('스테이지 $stage 돌파! 보상 +💎$eGain +🦷$fGain — 더 사나운 놈들이 옵니다!',
+            force: true, face: '😼');
       }
       _shakeAdd(6);
     }
@@ -2011,12 +2028,22 @@ class World {
                 PickType.values[rng.nextInt(PickType.values.length)]));
           }
           fangs += 8;
-          runFangs += 8;
+          ore += 4; // 엘리트 → 🔩 광석(장비 재화)
           devour += 6;
-          _float(e.x, e.y - e.radius - 8, 'ELITE 격파! +🦷8', P.gold, 17);
+          _float(e.x, e.y - e.radius - 8, 'ELITE 격파! +🦷8 +🔩4', P.gold, 16);
           _flash(P.gold, 0.5);
           _hs(0.06, force: true);
           _shakeAdd(8);
+          _hapticBig = true;
+        }
+        // 보스 처치 — 큰 보상(정수+광석)
+        if (e.type == EType.boss) {
+          final eG = 18 + stage * 2;
+          final oG = 10 + stage;
+          essence += eG;
+          ore += oG;
+          _float(e.x, e.y - e.radius - 12, '보스 격파! +💎$eG +🔩$oG', const Color(0xFFFF6A3D), 18);
+          _flash(P.gold, 0.6);
           _hapticBig = true;
         }
         double heal = e.type == EType.boss
@@ -2331,14 +2358,10 @@ class World {
     phase = GPhase.playing;
   }
 
-  void _onDeath() {
-    phase = GPhase.dead;
-    _hapticBig = true;
-    startStage = 1; // 죽으면 항상 스테이지1부터(로그라이트). 스테이지 선택 없음.
-    sfx.play('death');
-    if (time > bestTime) bestTime = time;
-    if (kills > bestKills) bestKills = kills;
-    // 전리품 적립 — 죽음이 헛되지 않게(플레이한 만큼 보상)
+  // 런 보상 — 사망/포기 공통(1회). 3재화: 송곳니(사냥)·정수(진행)·광석(전투) + 전리품.
+  void _grantRunRewards() {
+    if (_runRewarded) return;
+    _runRewarded = true;
     runFangs = ((kills + time.floor() + level * 8) *
             (1 + 0.12 * metaLv('gain')) *
             (1 + denVal('fang')) *
@@ -2346,10 +2369,38 @@ class World {
             prestigeFangMult)
         .round();
     fangs += runFangs;
+    runEssence = ((stage * 4 + (kills ~/ 25) + (time ~/ 30)) * curseReward).round();
+    essence += runEssence;
+    runOre = ((kills ~/ 12 + time ~/ 35 + stage * 2) * curseReward).round();
+    ore += runOre;
     _grantRunLoot(); // 성과 기반 전리품(장비) 드랍
+  }
+
+  void _onDeath() {
+    phase = GPhase.dead;
+    _hapticBig = true;
+    startStage = 1; // 죽으면 항상 스테이지1부터(로그라이트). 스테이지 선택 없음.
+    sfx.play('death');
+    if (time > bestTime) bestTime = time;
+    if (kills > bestKills) bestKills = kills;
+    _grantRunRewards();
     _evalAchievements();
     _saveRecords();
     _saveMeta();
+  }
+
+  // 포기(소굴로 복귀) — 죽지 않아도 그동안 번 보상을 지급(한 번). 사용자 요청.
+  void abandonRun() {
+    if (phase == GPhase.menu || phase == GPhase.playing) {
+      if (time > bestTime) bestTime = time;
+      if (kills > bestKills) bestKills = kills;
+      _grantRunRewards();
+      _evalAchievements();
+      _saveRecords();
+      _saveMeta();
+    }
+    startStage = 1;
+    phase = GPhase.title;
   }
 
   void _grantAch(String id, int reward) {
@@ -2462,6 +2513,8 @@ class World {
       if (raw == null) return;
       final j = (jsonDecode(raw) as Map).cast<String, dynamic>();
       fangs = j['fangs'] as int? ?? 0;
+      essence = j['ess'] as int? ?? 0;
+      ore = j['ore'] as int? ?? 0;
       final m = (j['up'] as Map?) ?? {};
       m.forEach((k, v) => meta[k as String] = v as int);
       final dn = (j['den'] as Map?) ?? {};
@@ -2494,6 +2547,8 @@ class World {
       equipped.forEach((k, v) => eq[k.index.toString()] = v);
       html.window.localStorage[_metaKey] = jsonEncode({
         'fangs': fangs,
+        'ess': essence,
+        'ore': ore,
         'up': meta,
         'den': den,
         'curses': curses.toList(),
@@ -2871,11 +2926,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ]),
           ),
           const SizedBox(height: 14),
-          // 상단: 소굴로(런 종료하고 거점 복귀)
+          // 상단: 소굴로(런 포기 — 그동안 번 보상 지급 후 거점 복귀)
           SizedBox(
             width: 320,
-            child: _actBtn('🏠  소굴로', P.panel, false,
-                () => setState(() => world.phase = GPhase.title)),
+            child: _actBtn('🏠  소굴로 (포기 · 보상 받기)', P.panel, false,
+                () => setState(() => world.abandonRun())),
           ),
           const SizedBox(height: 14),
           // 허브 타일 그리드 (단련/장비/창고/업적/무늬/설정)
@@ -3363,6 +3418,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         runSpacing: 6,
         children: [
           chip('🦷 ${world.fangs}', P.goldSoft),
+          chip('💎 ${world.essence}', P.cyan),
+          chip('🔩 ${world.ore}', const Color(0xFFFFB48F)),
           if (world.prestige > 0) chip('🌀 ×${world.prestige}', P.purple),
           chip('🏆 ${world.bestTime > 0 ? World.mmss(world.bestTime) : "–"}', P.gold),
           chip('🌊 ${world.maxStage}', P.cyan),
@@ -3615,14 +3672,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     return _ovl('🏯', '소굴  ·  Lv ${world.denLevel}', [
       const Padding(
         padding: EdgeInsets.fromLTRB(2, 0, 2, 8),
-        child: Text('거점을 키워 영구히 강해진다 — 공격·생존·경제 중 어디에 투자할지가 곧 전략.',
+        child: Text('💎 정수로 거점을 키운다(스테이지 진행·보스로 획득) — 어디 투자할지가 전략.',
             style: TextStyle(color: P.muted, fontSize: 11.5, height: 1.35)),
       ),
       ...kDen.map((d) {
         final lv = world.denLv(d.id);
         final maxed = lv >= d.maxLv;
         final cost = world.denCost(d.id);
-        final afford = !maxed && world.fangs >= cost;
+        final afford = !maxed && world.essence >= cost;
         return Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: Container(
@@ -3658,7 +3715,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     child: Container(
                       alignment: Alignment.center,
                       padding: const EdgeInsets.symmetric(vertical: 11),
-                      child: Text(maxed ? 'MAX' : '🦷 $cost',
+                      child: Text(maxed ? 'MAX' : '💎 $cost',
                           style: TextStyle(
                               color: maxed ? P.muted : (afford ? Colors.black : P.muted),
                               fontSize: 13,
@@ -3671,7 +3728,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ),
         );
       }),
-    ], GPhase.title);
+    ], GPhase.title, trailing: '💎 ${world.essence}');
   }
 
   // ── 시련(Curse) — 자율 난이도 선택(리스크↑ 보상↑) ──
@@ -4100,7 +4157,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       color: const Color(0xF20A0806),
       child: SafeArea(
         child: Column(children: [
-          _ohead('⚒', '대장간'),
+          _ohead('⚒', '대장간', trailing: '🔩 ${world.ore}'),
           _slotTabs(),
           Expanded(
             child: ListView(
@@ -4709,11 +4766,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     final owned = world.ownedGear.contains(g.id);
     final equippedHere = world.equipped[g.slot] == g.id;
     final rc = kRarityCol[g.rarity];
-    final canBuy = !owned && world.fangs >= g.cost;
+    final canBuy = !owned && world.ore >= g.cost;
     final btnColor = equippedHere
         ? const Color(0xFF2A2018)
         : (owned ? P.green.withOpacity(0.85) : (canBuy ? P.gold : const Color(0xFF2A2018)));
-    final btnText = equippedHere ? '장착중' : (owned ? '장착' : '🦷${g.cost}');
+    final btnText = equippedHere ? '장착중' : (owned ? '장착' : '🔩${g.cost}');
     final slotName = g.slot == GearSlot.weapon ? '무기' : (g.slot == GearSlot.armor ? '방어구' : '장신구');
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -4997,7 +5054,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 color: const Color(0x22E8A33D),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text('🦷 전리품 +${world.runFangs}  (보유 ${world.fangs})',
+              child: Text('🦷 +${world.runFangs}   💎 +${world.runEssence}   🔩 +${world.runOre}',
                   style: const TextStyle(
                       color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
             ),
@@ -5228,12 +5285,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   // 리스트형 오버레이 공용 골격 (스크림+헤더+본문+닫기) — 통일성
   Widget _ovl(String icon, String title, List<Widget> body, GPhase backTo,
-          {bool fangs = true, String backLabel = '닫기'}) =>
+          {bool fangs = true, String backLabel = '닫기', String? trailing}) =>
       Container(
         color: const Color(0xF20A0806),
         child: SafeArea(
           child: Column(children: [
-            _ohead(icon, title, fangs: fangs),
+            _ohead(icon, title, fangs: fangs, trailing: trailing),
             Expanded(
                 child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), children: body)),
             _backBar(backTo, label: backLabel),
