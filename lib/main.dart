@@ -1261,6 +1261,7 @@ class World {
     _hitStop = 0;
     _hsCd = 0;
     flashT = 0;
+    gameSpeed = 1; // 매 런 1배속으로 시작 — 갑자기 빨라져 놀라지 않게. 배속은 칩으로 직접 켠다.
     stage = 1; // 항상 스테이지1부터 — 로그라이트 클라임(죽으면 처음부터, 메타·소굴로 영구 성장)
     pendingStage = stage;
     startStage = stage;
@@ -1680,9 +1681,21 @@ class World {
         final dmg = (8 + spikeLv * 6) * dmgMult * (spikeEvo ? 2.0 : 1.0);
         final spikeCount = spikeLv.clamp(1, 16); // Lv1=가시 1개 → 레벨마다 +1
         final zones = spikeEvo ? 2 : 1; // 진화 '가시 감옥' — 동시에 두 군데
+        // 정밀타격 — 가까운 적 위치에 정확히 솟는다(아무데나 X). 적 없으면 플레이어 전방.
+        final targets = enemies.toList()
+          ..sort((a, b) =>
+              ((a.x - px) * (a.x - px) + (a.y - py) * (a.y - py))
+                  .compareTo((b.x - px) * (b.x - px) + (b.y - py) * (b.y - py)));
         for (int z = 0; z < zones; z++) {
-          final ox = px + (rng.nextDouble() - 0.5) * 160;
-          final oy = py + (rng.nextDouble() - 0.5) * 160;
+          double ox, oy;
+          if (z < targets.length) {
+            ox = targets[z].x;
+            oy = targets[z].y;
+          } else {
+            // 적이 없을 때만 플레이어 주변 가벼운 무작위 위치
+            ox = px + (rng.nextDouble() - 0.5) * 120;
+            oy = py + (rng.nextDouble() - 0.5) * 120;
+          }
           for (final e in enemies) {
             final rr = radius + e.radius;
             if ((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy) <= rr * rr) {
@@ -2098,11 +2111,13 @@ class World {
           _hs(0.08, force: true);
           _dropGearLoot(); // 보스 전리품 → 장비 루트(미보유 중 1개) 획득 가능
         }
-        // 화면(아레나) 안에만 떨구기 — 가장자리 밖에서 죽어도 구슬은 안쪽으로 클램프(못 줍는 일 방지)
+        // 무한 맵 — 죽은 바로 그 자리(월드 좌표)에 정확히 떨군다. 화면 클램프 X(맵이 무한이라 의미 없음).
+        // 여러 개 떨구는 적만 겹치지 않게 아주 살짝 흩뿌림.
         final drops = e.type == EType.boss ? 14 : (e.type == EType.tank ? 3 : 1);
         for (int i = 0; i < drops; i++) {
-          final ox = (e.x + (rng.nextDouble() - 0.5) * 24).clamp(12.0, w - 12);
-          final oy = (e.y + (rng.nextDouble() - 0.5) * 24).clamp(12.0, h - 12);
+          final sc = drops > 1 ? 22.0 : 0.0;
+          final ox = e.x + (rng.nextDouble() - 0.5) * sc;
+          final oy = e.y + (rng.nextDouble() - 0.5) * sc;
           orbs.add(Orb(ox, oy, e.type == EType.boss ? 4.0 : 1.0));
         }
         // 바닥 파워업 가끔 드랍(탱크·분열은 확률↑) — 순간 변수·도파민. 역시 화면 안으로.
@@ -2110,7 +2125,7 @@ class World {
             ? 0.0
             : (e.type == EType.tank ? 0.16 : (e.type == EType.splitter ? 0.06 : 0.022));
         if (pickups.length < 6 && rng.nextDouble() < pdrop) {
-          pickups.add(Pickup(e.x.clamp(16.0, w - 16), e.y.clamp(16.0, h - 16),
+          pickups.add(Pickup(e.x, e.y, // 무한 맵 — 죽은 자리에 정확히(클램프 X)
               PickType.values[rng.nextInt(PickType.values.length)]));
         }
         final col = e.type == EType.fast
