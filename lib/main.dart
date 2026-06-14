@@ -738,6 +738,20 @@ class World {
   double diff = 0.78;
   int stage = 1, maxStage = 1; // 현재/최고 도달 스테이지(최고는 슬롯별 영구 저장)
   int pendingStage = 1; // 메뉴에서 고르는 '이동 목표' 스테이지(선택 후 버튼으로 확정)
+  // 진행 배속 — 최고 스테이지 도달로 해금(아이들/모바일RPG식 시간 존중 보상). 클라임을 빠르게.
+  int gameSpeed = 1;
+  int get maxGameSpeed {
+    if (maxStage >= 16) return 5;
+    if (maxStage >= 12) return 4;
+    if (maxStage >= 8) return 3;
+    if (maxStage >= 4) return 2;
+    return 1;
+  }
+
+  void cycleSpeed() {
+    gameSpeed = gameSpeed >= maxGameSpeed ? 1 : gameSpeed + 1;
+    _saveMeta();
+  }
   double _stageT = 15; // 자동 상승 타이머(초반 빠름 → 점점 길어짐)
 
   // 스테이지별 난이도 — '상한 없음'. 스테이지가 계속 오르므로 적도 끝없이 강해진다(장수성).
@@ -1218,10 +1232,10 @@ class World {
     _hitStop = 0;
     _hsCd = 0;
     flashT = 0;
-    stage = (atStage ?? startStage).clamp(1, maxStage); // 선택한 시작 스테이지에서 출발
+    stage = 1; // 항상 스테이지1부터 — 로그라이트 클라임(죽으면 처음부터, 메타·소굴로 영구 성장)
     pendingStage = stage;
     startStage = stage;
-    _headStart = _stageHeadStart(stage); // 높은 스테이지 시작 = 그만큼 적 스케일 당겨오기
+    _headStart = _stageHeadStart(stage);
     _stageT = _stageDuration(stage);
     _applyStageDiff();
     _grantStartBuild(stage); // 높은 스테이지면 그만큼의 시작 빌드(무기/패시브/레벨/특별스킬) 자동 지급
@@ -2233,7 +2247,7 @@ class World {
   void _onDeath() {
     phase = GPhase.dead;
     _hapticBig = true;
-    startStage = stage; // 사용자 선택: 죽은 스테이지에서 바로 재시작(사망 화면서 변경 가능)
+    startStage = 1; // 죽으면 항상 스테이지1부터(로그라이트). 스테이지 선택 없음.
     sfx.play('death');
     if (time > bestTime) bestTime = time;
     if (kills > bestKills) bestKills = kills;
@@ -2366,6 +2380,7 @@ class World {
       dn.forEach((k, v) => den[k as String] = v as int);
       curses.addAll(((j['curses'] as List?) ?? []).map((e) => e as String));
       stance = j['stance'] as String? ?? 'balanced';
+      gameSpeed = (j['gspeed'] as int?) ?? 1;
       achieved.addAll(((j['ach'] as List?) ?? []).map((e) => e as String));
       ownedSkins.addAll(((j['skins'] as List?) ?? []).map((e) => e as String));
       skin = j['skin'] as String? ?? 'default';
@@ -2395,6 +2410,7 @@ class World {
         'den': den,
         'curses': curses.toList(),
         'stance': stance,
+        'gspeed': gameSpeed,
         'ach': achieved.toList(),
         'skins': ownedSkins.toList(),
         'skin': skin,
@@ -2515,7 +2531,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     }
     final wasPlaying = world.phase == GPhase.playing;
     final sw = Stopwatch()..start();
-    world.update(dt);
+    // 진행 배속 — 플레이 중엔 같은 dt로 여러 번 시뮬(물리 안정 유지하며 2x/3x 가속)
+    final steps = wasPlaying ? world.gameSpeed.clamp(1, world.maxGameSpeed) : 1;
+    for (int i = 0; i < steps; i++) {
+      world.update(dt);
+      if (world.phase != GPhase.playing) break; // 도중 페이즈 변화(사망·레벨업) 시 중단
+    }
     sw.stop();
     final upMs = sw.elapsedMicroseconds / 1000.0;
     world.peakUpd = upMs > world.peakUpd ? upMs : world.peakUpd * 0.99; // 피크 update
@@ -2571,6 +2592,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 world.phase == GPhase.menu) _hud(),
             if (world.phase == GPhase.playing) _rageButton(),
             if (world.phase == GPhase.playing) _tinyCallButton(),
+            if (world.phase == GPhase.playing && world.maxGameSpeed > 1) _speedButton(),
             if (world.optPerf) _perfHud(),
             if (world.phase == GPhase.title) _title(),
             if (world.phase == GPhase.shop) _shopOverlay(),
@@ -3169,7 +3191,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               ]),
             ),
           ),
-          // 맨 아래: 사냥터 스테퍼 + 생존 시작 CTA + 초기화
+          // 맨 아래: 출격 설정 칩 + 생존 시작 CTA + 초기화 (스테이지는 항상 1부터 — 선택 없음)
           Positioned(
             left: 0,
             right: 0,
@@ -3178,12 +3200,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               Wrap(spacing: 7, runSpacing: 6, alignment: WrapAlignment.center, children: [
                 _stanceChipButton(),
                 _curseChipButton(),
+                if (world.maxGameSpeed > 1) _speedChipButton(),
               ]),
-              const SizedBox(height: 7),
-              if (world.maxStage > 1) _stageStepper(),
-              if (world.maxStage > 1) const SizedBox(height: 8),
-              _ctaButton(world.maxStage > 1 ? '⚔  STAGE ${world.startStage}  생존 시작' : '⚔  생 존  시 작',
-                  () => setState(() => world.startGame(atStage: world.startStage))),
+              const SizedBox(height: 9),
+              _ctaButton('⚔  생 존  시 작', () => setState(() => world.startGame())),
               const SizedBox(height: 6),
               GestureDetector(
                 onTap: _confirmReset,
@@ -3290,6 +3310,51 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         child: Text('${s.icon} ${s.name}',
             style: TextStyle(
                 color: active ? P.gold : P.muted, fontSize: 12.5, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  // 인게임 배속 버튼 — 우상단, 탭하면 순환
+  Widget _speedButton() {
+    final sp = world.gameSpeed.clamp(1, world.maxGameSpeed);
+    return Positioned(
+      top: 92,
+      right: 12,
+      child: GestureDetector(
+        onTap: () => setState(() => world.cycleSpeed()),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+          decoration: BoxDecoration(
+            color: sp > 1 ? P.cyan.withOpacity(0.22) : Colors.black.withOpacity(0.45),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: sp > 1 ? P.cyan : Colors.white.withOpacity(0.25), width: 1.5),
+          ),
+          child: Text('⏩ ${sp}x',
+              style: TextStyle(
+                  color: sp > 1 ? P.cyan : Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold)),
+        ),
+      ),
+    );
+  }
+
+  // 진행 배속 칩 — 탭하면 1x→2x→...→1x 순환(maxStage로 해금)
+  Widget _speedChipButton() {
+    final sp = world.gameSpeed.clamp(1, world.maxGameSpeed);
+    final active = sp > 1;
+    return GestureDetector(
+      onTap: () => setState(() => world.cycleSpeed()),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? P.cyan.withOpacity(0.18) : Colors.black.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: active ? P.cyan.withOpacity(0.8) : P.line),
+        ),
+        child: Text('⏩ ${sp}x',
+            style: TextStyle(
+                color: active ? P.cyan : P.muted, fontSize: 12.5, fontWeight: FontWeight.bold)),
       ),
     );
   }
@@ -4783,10 +4848,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ]),
         ),
         const SizedBox(height: 16),
-        _startStagePicker(),
-        const SizedBox(height: 16),
-        _bigBtn('🔥  STAGE ${world.startStage} 에서 다시 일어선다', P.blood,
-            () => setState(() => world.startGame(atStage: world.startStage)), dark: false),
+        _bigBtn('🔥  다시 일어선다 (스테이지 1부터)', P.blood,
+            () => setState(() => world.startGame()), dark: false),
         const SizedBox(height: 10),
         _bigBtn('🦷  전리품 상점', P.panel, () => setState(() {
               world.shopReturn = GPhase.dead;
