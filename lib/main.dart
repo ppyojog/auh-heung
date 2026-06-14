@@ -2352,10 +2352,20 @@ class World {
   }
 
   void pick(Upgrade u) {
+    final wasSpecial = specialChoice;
     u.apply();
     choices = [];
     specialChoice = false;
     phase = GPhase.playing;
+    // 선택 피드백 — 무엇이 좋아졌는지 명시 + 그래픽 연출(직관성)
+    _say('✨ ${u.title} 획득! ${u.desc}', force: true, face: '😼');
+    _float(px, py - 56, '${u.icon} ${u.title}', wasSpecial ? P.purple : P.gold, 17);
+    pulses.add(Pulse(px, py, wasSpecial ? 150 : 100, 0.5, wasSpecial ? P.purple : P.gold));
+    _flash(wasSpecial ? P.purple : P.gold, wasSpecial ? 0.4 : 0.25);
+    if (wasSpecial) {
+      _hapticBig = true;
+      _shakeAdd(6);
+    }
   }
 
   // 런 보상 — 사망/포기 공통(1회). 3재화: 송곳니(사냥)·정수(진행)·광석(전투) + 전리품.
@@ -5834,6 +5844,18 @@ class WorldPainter extends CustomPainter {
     _eyeP.color = base;
     canvas.drawCircle(Offset(e.x - e.radius * 0.34, e.y - e.radius * 0.08), e.radius * 0.17, _eyeP);
     canvas.drawCircle(Offset(e.x + e.radius * 0.34, e.y - e.radius * 0.08), e.radius * 0.17, _eyeP);
+    // 서리(빙결) — 푸른 얼음 틴트로 둔화 상태가 눈에 보이게
+    if (e.chill > 0) {
+      canvas.drawCircle(Offset(e.x, e.y), e.radius,
+          Paint()..color = const Color(0xFF8FD8FF).withOpacity(0.45));
+      canvas.drawCircle(
+          Offset(e.x, e.y),
+          e.radius + 1.5,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.6
+            ..color = const Color(0xFFCDEEFF).withOpacity(0.8));
+    }
     // 피격 섬광
     if (e.flash > 0) {
       canvas.drawCircle(Offset(e.x, e.y), e.radius,
@@ -5923,6 +5945,34 @@ class WorldPainter extends CustomPainter {
     final fw = r * 2 / (1 + (sq - 1) * 0.5);
     final fh = r * 2 * sq;
     final stripeCol = const Color(0xFF3A2606);
+
+    // 활성 특별스킬 시각 표시 — 효과가 눈에 보이게(직관성)
+    if (w.sp('magnet')) {
+      // 수집 범위 링
+      canvas.drawCircle(
+          Offset(cx, cy),
+          w.pickupRange,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..color = P.cyan.withOpacity(0.10));
+    }
+    if (w.sp('armor')) {
+      // 강철 가죽 — 맥동하는 보호막 링
+      final sh = 0.5 + 0.5 * sin(t * 3);
+      canvas.drawCircle(
+          Offset(cx, cy),
+          r * 2.1,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.5
+            ..color = const Color(0xFF7FB3FF).withOpacity(0.22 + 0.16 * sh));
+    }
+    if (w.sp('regen')) {
+      // 재생 — 부드러운 초록 오라
+      final g = 0.5 + 0.5 * sin(t * 2.2);
+      canvas.drawCircle(Offset(cx, cy), r * 1.7, Paint()..color = P.green.withOpacity(0.05 + 0.05 * g));
+    }
 
     // 안광
     canvas.drawCircle(Offset(cx, cy), r * 3.0, Paint()..color = col.withOpacity(0.12));
