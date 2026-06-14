@@ -2140,6 +2140,7 @@ class World {
       orbs.removeRange(0, excess);
     }
     final pr2 = pickupRange * pickupRange;
+    final far2 = _spawnRadius * _spawnRadius * 2.56; // 무한 맵 — 화면 한참 밖(1.6×) 기준
     for (final o in orbs) {
       final dx = px - o.x, dy = py - o.y;
       final d2 = dx * dx + dy * dy;
@@ -2155,6 +2156,10 @@ class World {
           o.dead = true;
           sfx.play('pick', gapMs: 35);
         }
+      } else if (d2 > far2) {
+        // 무한 맵 — 멀리 두고 온 구슬은 즉시 XP로 흡수(누적·낭비·렉 방지, 항상 근처에만 유지)
+        xp += o.value * xpMult;
+        o.dead = true;
       }
     }
     orbs.removeWhere((o) => o.dead);
