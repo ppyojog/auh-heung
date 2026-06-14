@@ -1378,12 +1378,24 @@ class World {
     if (_stageT <= 0) {
       stage += 1;
       _stageT = _stageDuration(stage);
+      bool unlockedSpeed = false;
       if (stage > maxStage) {
+        final prevSpeedCap = maxGameSpeed;
         maxStage = stage;
         _saveMeta();
+        // 마일스톤 해금 피드백 — 새 최고 기록으로 배속이 열리면 축하(진행 보상감)
+        if (maxGameSpeed > prevSpeedCap) {
+          unlockedSpeed = true;
+          _say('🏆 최고 기록! ⏩ ${maxGameSpeed}배속 해금! 칩으로 켜세요, 대장님!',
+              force: true, face: '🌟');
+          _flash(P.cyan, 0.4);
+          _hapticBig = true;
+        }
       }
       _applyStageDiff();
-      _say('스테이지 $stage 진입! 더 사나운 놈들이 몰려옵니다!', force: true, face: '😼');
+      if (!unlockedSpeed) {
+        _say('스테이지 $stage 진입! 더 사나운 놈들이 몰려옵니다!', force: true, face: '😼');
+      }
       _shakeAdd(6);
     }
 
