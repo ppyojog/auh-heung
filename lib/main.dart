@@ -252,32 +252,47 @@ enum GearSlot { weapon, armor, trinket }
 class Gear {
   final String id, name, icon, desc;
   final GearSlot slot;
-  final int rarity; // 0 일반 · 1 희귀 · 2 영웅 · 3 전설
-  final int cost; // 송곳니 (대장간 구매가)
+  final int rarity; // 0 일반 · 1 희귀 · 2 영웅 · 3 전설 · 4 신화
+  final int cost; // 송곳니 (대장간 구매가). dropOnly면 0.
   final Map<String, double> stats; // dmg% · as%(공속) · hp · spd% · pick · regen(/s)
-  const Gear(this.id, this.name, this.icon, this.slot, this.rarity, this.cost, this.stats, this.desc);
+  final bool dropOnly; // true = 대장간 구매 불가, 필드 전리품(사냥 보상)으로만 획득
+  const Gear(this.id, this.name, this.icon, this.slot, this.rarity, this.cost, this.stats, this.desc,
+      {this.dropOnly = false});
 }
 
 const List<Gear> kGear = [
-  // 무기 각인 (공격력·공속)
+  // ── 무기 각인 (공격력·공속) — 대장간 구매 ──
   Gear('w0', '무쇠 발톱', '🗡', GearSlot.weapon, 0, 40, {'dmg': 8}, '공격력 +8%'),
   Gear('w1', '예리한 발톱', '🗡', GearSlot.weapon, 1, 95, {'dmg': 14, 'as': 8}, '공격력 +14% · 공속 +8%'),
   Gear('w2', '폭풍의 발톱', '🗡', GearSlot.weapon, 2, 190, {'dmg': 22, 'as': 14}, '공격력 +22% · 공속 +14%'),
   Gear('w3', '백호의 발톱', '🗡', GearSlot.weapon, 3, 340, {'dmg': 34, 'as': 18}, '전설 · 공격력 +34% · 공속 +18%'),
-  // 방어구 (체력·재생)
+  Gear('w4', '왕의 발톱', '🗡', GearSlot.weapon, 3, 560, {'dmg': 46, 'as': 24}, '전설 · 공격력 +46% · 공속 +24%'),
+  Gear('w5', '천공의 발톱', '🗡', GearSlot.weapon, 4, 900, {'dmg': 62, 'as': 30}, '신화 · 공격력 +62% · 공속 +30%'),
+  // ── 방어구 (체력·재생) — 대장간 구매 ──
   Gear('a0', '두꺼운 가죽', '🛡', GearSlot.armor, 0, 35, {'hp': 35}, '최대체력 +35'),
   Gear('a1', '상흔의 가죽', '🛡', GearSlot.armor, 1, 90, {'hp': 60, 'regen': 0.5}, '체력 +60 · 재생 0.5/s'),
   Gear('a2', '강철 비늘', '🛡', GearSlot.armor, 2, 180, {'hp': 95, 'regen': 1.0}, '체력 +95 · 재생 1.0/s'),
   Gear('a3', '불멸의 가죽', '🛡', GearSlot.armor, 3, 320, {'hp': 150, 'regen': 1.6}, '전설 · 체력 +150 · 재생 1.6/s'),
-  // 장신구 (이동·수집·잡탕)
+  Gear('a4', '용골 갑주', '🛡', GearSlot.armor, 3, 560, {'hp': 210, 'regen': 2.2}, '전설 · 체력 +210 · 재생 2.2/s'),
+  Gear('a5', '태초의 비늘', '🛡', GearSlot.armor, 4, 900, {'hp': 300, 'regen': 3.0}, '신화 · 체력 +300 · 재생 3.0/s'),
+  // ── 장신구 (이동·수집·잡탕) — 대장간 구매 ──
   Gear('t0', '바람 부적', '💍', GearSlot.trinket, 0, 35, {'spd': 6, 'pick': 12}, '이동 +6% · 수집 +12'),
   Gear('t1', '탐욕의 부적', '💍', GearSlot.trinket, 1, 90, {'spd': 8, 'pick': 26}, '이동 +8% · 수집 +26'),
   Gear('t2', '사냥꾼의 부적', '💍', GearSlot.trinket, 2, 180, {'spd': 12, 'pick': 30, 'as': 8}, '이동 +12% · 수집 +30 · 공속 +8%'),
   Gear('t3', '폭군의 인장', '💍', GearSlot.trinket, 3, 320, {'spd': 14, 'dmg': 12, 'pick': 30}, '전설 · 이동 +14% · 공격 +12% · 수집 +30'),
+  Gear('t4', '제왕의 인장', '💍', GearSlot.trinket, 3, 560, {'spd': 16, 'dmg': 18, 'pick': 40}, '전설 · 이동 +16% · 공격 +18% · 수집 +40'),
+  Gear('t5', '천명의 인장', '💍', GearSlot.trinket, 4, 900, {'spd': 20, 'dmg': 26, 'as': 12, 'pick': 40}, '신화 · 이동 +20% · 공격 +26% · 공속 +12% · 수집 +40'),
+  // ── 🎁 필드 전용 (사냥 전리품으로만) — 구매 불가, 고유 복합 스탯 ──
+  Gear('wd0', '피에 젖은 발톱', '🩸', GearSlot.weapon, 4, 0, {'dmg': 44, 'as': 20, 'hp': 50}, '필드전용 · 공격 +44% · 공속 +20% · 체력 +50', dropOnly: true),
+  Gear('wd1', '약탈자의 갈고리', '🪝', GearSlot.weapon, 4, 0, {'dmg': 50, 'pick': 50}, '필드전용 · 공격 +50% · 수집 +50', dropOnly: true),
+  Gear('ad0', '대지의 비늘', '🐢', GearSlot.armor, 4, 0, {'hp': 200, 'regen': 2.4, 'spd': 8}, '필드전용 · 체력 +200 · 재생 2.4/s · 이동 +8%', dropOnly: true),
+  Gear('ad1', '광폭의 갑주', '🔥', GearSlot.armor, 4, 0, {'hp': 150, 'dmg': 16, 'as': 14}, '필드전용 · 체력 +150 · 공격 +16% · 공속 +14%', dropOnly: true),
+  Gear('td0', '풍요의 뿔', '🌽', GearSlot.trinket, 4, 0, {'pick': 70, 'spd': 14, 'regen': 1.2}, '필드전용 · 수집 +70 · 이동 +14% · 재생 1.2/s', dropOnly: true),
+  Gear('td1', '야수왕의 징표', '👑', GearSlot.trinket, 4, 0, {'dmg': 24, 'as': 18, 'spd': 12}, '필드전용 · 공격 +24% · 공속 +18% · 이동 +12%', dropOnly: true),
 ];
 
-const List<Color> kRarityCol = [P.parch, P.cyan, P.purple, P.gold];
-const List<String> kRarityName = ['일반', '희귀', '영웅', '전설'];
+const List<Color> kRarityCol = [P.parch, P.cyan, P.purple, P.gold, Color(0xFFFF6A3D)];
+const List<String> kRarityName = ['일반', '희귀', '영웅', '전설', '신화'];
 
 // 공지 / 이벤트 (메인 로비) — 패치 소식·이벤트·팁. tag: 'event'=이벤트, 'new'=신규, 'tip'=팁
 class Notice {
@@ -676,7 +691,7 @@ class World {
 
   bool buyGear(String id) {
     final g = gearById(id);
-    if (g == null || ownedGear.contains(id) || fangs < g.cost) return false;
+    if (g == null || g.dropOnly || ownedGear.contains(id) || fangs < g.cost) return false;
     fangs -= g.cost;
     ownedGear.add(id);
     equipped[g.slot] ??= id; // 첫 구매면 자동 장착
@@ -1877,7 +1892,10 @@ class World {
     final score = stage * 3 + kills ~/ 18 + time ~/ 28; // 성과 점수
     final rolls = (1 + score ~/ 6).clamp(1, 6);
     for (int i = 0; i < rolls; i++) {
-      final pool = kGear.where((g) => !ownedGear.contains(g.id)).toList();
+      // 신화(rarity 4·필드전용 포함)는 깊은 클라임(스테이지 6+)에서만 — 보상감
+      final pool = kGear
+          .where((g) => !ownedGear.contains(g.id) && (g.rarity < 4 || stage >= 6))
+          .toList();
       if (pool.isEmpty) {
         runLootFangs += 30; // 다 모음 → 송곳니 환산
         continue;
@@ -2859,20 +2877,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           // 허브 타일 그리드 (단련/장비/창고/업적/무늬/설정)
           SizedBox(width: 320, child: _hubGrid(from: GPhase.menu)),
           const SizedBox(height: 14),
-          // 하단 주 동작: 이어하기 (+ 배속) — 엄지존(가장 자주 누름)
+          // 하단 주 동작: 이어하기 — 한 줄 전체(엄지존, 가장 자주 누름). 배속은 인게임 우상단 버튼으로.
           SizedBox(
             width: 320,
-            child: Row(children: [
-              Expanded(
-                  child: _actBtn('▶  이어하기', P.gold, true,
-                      () => setState(() => world.resume()))),
-              if (world.maxGameSpeed > 1) ...[
-                const SizedBox(width: 10),
-                Expanded(
-                    child: _actBtn('⏩  ${world.gameSpeed.clamp(1, world.maxGameSpeed)}x 배속', P.cyan, true,
-                        () => setState(() => world.cycleSpeed()))),
-              ],
-            ]),
+            child: _actBtn('▶  이어하기', P.gold, true, () => setState(() => world.resume())),
           ),
           const SizedBox(height: 9),
           SizedBox(
@@ -4080,9 +4088,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ── 대장간 — 송곳니로 장비 구매. 슬롯 필터 ──
+  // ── 대장간 — 송곳니로 장비 구매 + 필드 전용 장비 안내. 슬롯 필터 ──
   Widget _forgeOverlay() {
-    final list = kGear.where(_gearInFilter).toList();
+    final buyable = kGear.where((g) => _gearInFilter(g) && !g.dropOnly).toList();
+    final fieldOnly = kGear.where((g) => _gearInFilter(g) && g.dropOnly).toList();
     return Container(
       color: const Color(0xF20A0806),
       child: SafeArea(
@@ -4092,10 +4101,72 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-              children: list.map((g) => _gearRow(g)).toList(),
+              children: [
+                ...buyable.map((g) => _gearRow(g)),
+                if (fieldOnly.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [
+                        const Color(0xFFFF6A3D).withOpacity(0.18),
+                        Colors.black.withOpacity(0.2)
+                      ]),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFFF6A3D).withOpacity(0.6)),
+                    ),
+                    child: const Text('🎁 필드 전용 — 사냥에서 살아남으면 성과에 따라 드랍 (구매 불가)',
+                        style: TextStyle(
+                            color: Color(0xFFFFB48F), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                  ...fieldOnly.map((g) =>
+                      world.ownedGear.contains(g.id) ? _gearRow(g) : _lockedGearRow(g)),
+                ],
+              ],
             ),
           ),
           _backBar(GPhase.inventory, label: '창고로'),
+        ]),
+      ),
+    );
+  }
+
+  // 필드 전용 미보유 장비 — 잠긴 카드(구매 불가, 드랍으로만)
+  Widget _lockedGearRow(Gear g) {
+    final rc = kRarityCol[g.rarity];
+    final slotName = g.slot == GearSlot.weapon ? '무기' : (g.slot == GearSlot.armor ? '방어구' : '장신구');
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.28),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: rc.withOpacity(0.45)),
+        ),
+        child: Row(children: [
+          Opacity(opacity: 0.85, child: Text(g.icon, style: const TextStyle(fontSize: 22))),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration:
+                      BoxDecoration(color: rc.withOpacity(0.2), borderRadius: BorderRadius.circular(5)),
+                  child: Text('${kRarityName[g.rarity]}·$slotName',
+                      style: TextStyle(color: rc, fontSize: 9, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 6),
+                Text(g.name, style: TextStyle(color: rc, fontSize: 13.5, fontWeight: FontWeight.bold)),
+              ]),
+              const SizedBox(height: 2),
+              Text(g.desc, style: const TextStyle(color: P.muted, fontSize: 11)),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          const Text('🔒', style: TextStyle(fontSize: 18)),
         ]),
       ),
     );
