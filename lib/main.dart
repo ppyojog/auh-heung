@@ -126,7 +126,8 @@ class SpikeFx {
   final double x, y, radius;
   double life;
   final double maxLife;
-  SpikeFx(this.x, this.y, this.radius, this.life) : maxLife = life;
+  final int count; // 솟는 가시 개수(스킬 레벨에 비례, Lv1=1)
+  SpikeFx(this.x, this.y, this.radius, this.life, [this.count = 6]) : maxLife = life;
 }
 
 class FloatText {
@@ -1596,7 +1597,8 @@ class World {
     if (clawLv > 0) {
       clawT -= dt;
       if (clawT <= 0) {
-      clawT = ((clawEvo ? 0.5 : 0.8 * pow(0.9, clawLv - 1)) / fireMult).toDouble();
+      // 발사 속도는 레벨로 안 빨라짐(공속은 분노·과부하 등 공속 패시브가 담당). 레벨은 '개수'만.
+      clawT = ((clawEvo ? 0.5 : 0.8) / fireMult).toDouble();
       final target = _nearest();
       if ((target != null || clawEvo) && bullets.length < 220) {
         final dmg = (9 + clawLv * 4) * dmgMult * (clawEvo ? 1.7 : 1.0);
@@ -1607,11 +1609,8 @@ class World {
             bullets.add(Bullet(px, py, cos(a) * 360, sin(a) * 360, dmg, 6, 1.5, pierce));
           }
         } else {
-          final n = 1 +
-              (clawLv >= 2 ? 1 : 0) +
-              (clawLv >= 4 ? 1 : 0) +
-              (clawLv >= 6 ? 1 : 0) +
-              (sp('multi') ? 1 : 0);
+          // 투사체 개수 — 2레벨당 +1(매 레벨이면 너무 강해짐). Lv1=1, Lv2=2 … Lv8=5
+          final n = 1 + (clawLv ~/ 2) + (sp('multi') ? 1 : 0);
           final baseAng = atan2(target!.y - py, target.x - px);
           for (int i = 0; i < n; i++) {
             final a = baseAng + (i - (n - 1) / 2) * 0.18;
@@ -1626,7 +1625,7 @@ class World {
     if (boltLv > 0) {
       boltT -= dt;
       if (boltT <= 0) {
-        boltT = ((1.5 * pow(0.9, boltLv - 1)) / fireMult).toDouble();
+        boltT = (1.5 / fireMult).toDouble(); // 속도는 레벨 무관(연쇄 수만 레벨로 증가)
         if (enemies.isNotEmpty) {
           double dmg = (10 + boltLv * 6) * dmgMult * (boltEvo ? 1.8 : 1.0);
           double fx = px, fy = py;
@@ -1659,9 +1658,10 @@ class World {
     if (spikeLv > 0) {
       spikeT -= dt;
       if (spikeT <= 0) {
-        spikeT = ((1.8 * pow(0.92, spikeLv - 1)) / fireMult).toDouble();
+        spikeT = (1.8 / fireMult).toDouble(); // 속도는 레벨 무관(가시 '개수'만 레벨로 증가)
         final radius = (42 + spikeLv * 7.0) * (spikeEvo ? 1.7 : 1.0);
         final dmg = (8 + spikeLv * 6) * dmgMult * (spikeEvo ? 2.0 : 1.0);
+        final spikeCount = spikeLv.clamp(1, 16); // Lv1=가시 1개 → 레벨마다 +1
         final zones = spikeEvo ? 2 : 1; // 진화 '가시 감옥' — 동시에 두 군데
         for (int z = 0; z < zones; z++) {
           final ox = px + (rng.nextDouble() - 0.5) * 160;
@@ -1672,8 +1672,8 @@ class World {
               _dealHit(e, dmg, P.green, 12);
             }
           }
-          // 솟아오르는 가시 지대(삼각 기둥) — 이름에 맞는 연출
-          if (spikeFx.length < 8) spikeFx.add(SpikeFx(ox, oy, radius, 0.6));
+          // 솟아오르는 가시(삼각 기둥) — 레벨만큼 개수. Lv1은 1개만.
+          if (spikeFx.length < 8) spikeFx.add(SpikeFx(ox, oy, radius, 0.6, spikeCount));
         }
       }
     }
@@ -1681,8 +1681,7 @@ class World {
     if (roarLv > 0) {
       roarT -= dt;
       if (roarT <= 0) {
-        final cd = (2.6 * pow(0.93, roarLv - 1)) / fireMult;
-        roarT = cd.toDouble();
+        roarT = (2.6 / fireMult).toDouble(); // 속도는 레벨 무관(범위·위력만 레벨로 증가)
         final radius = (70 + roarLv * 16.0) * (roarEvo ? 1.8 : 1.0);
         final dmg = (8 + roarLv * 7) * dmgMult * (roarEvo ? 2.2 : 1.0);
         final push = roarEvo ? 30.0 : 14.0;
@@ -5480,7 +5479,7 @@ class WorldPainter extends CustomPainter {
       final p = 1 - a; // 진행 0→1
       final rise = p < 0.22 ? p / 0.22 : (p > 0.78 ? (1 - p) / 0.22 : 1.0);
       canvas.drawCircle(Offset(s.x, s.y), s.radius, Paint()..color = P.green.withOpacity(0.07 * rise));
-      final cnt = (s.radius / 7).round().clamp(6, 20);
+      final cnt = s.count; // 스킬 레벨에 비례한 가시 개수(Lv1=1)
       final body = Paint()..color = const Color(0xFF1E5E2A);
       final edge = Paint()
         ..color = P.green.withOpacity(0.9)
