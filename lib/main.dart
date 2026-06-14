@@ -241,7 +241,7 @@ const List<Special> kSpecials = [
   Special('regen', '💗', '재생', '매초 체력이 서서히 회복'),
   Special('lifesteal', '🩸', '흡혈', '처치 시 회복량 3배'),
   Special('explode', '💥', '연쇄 폭발', '적 처치 시 주변이 폭발한다'),
-  Special('multi', '🌪', '분신 발톱', '발톱 투사체 +1줄기'),
+  Special('multi', '🌪', '분신 발톱', '발톱을 한 번에 1발 더 발사(투사체 +1)'),
   Special('freeze', '❄', '서리 손길', '맞은 적이 잠시 얼어붙는다'),
 ];
 
