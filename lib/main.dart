@@ -949,6 +949,8 @@ class World {
   int fangs = 0;
   final Map<String, int> meta = {};
   int runFangs = 0; // 이번 런에서 번 송곳니(사망 화면 표시)
+  List<Gear> runLoot = []; // 이번 런 종료 시 획득한 전리품(사망 화면 표시)
+  int runLootFangs = 0; // 다 모아서 송곳니로 환산된 양
   // 환생(Prestige) — 100시간 성장 루프: 강화·송곳니를 리셋하는 대신 영구 배수 획득.
   int prestige = 0;
   double get prestigeMult => 1 + prestige * 0.12; // 환생당 공격·체력 +12%
@@ -1867,6 +1869,57 @@ class World {
     _say('전리품입니다, 대장님 — ${pick.name}! 장비창에서 확인하시죠.', force: true, face: '🎁');
   }
 
+  // 런 종료 전리품 — 도달 스테이지·처치·생존시간에 비례해 장비 드랍(성과 기반 루트).
+  //  높은 성과일수록 드랍 수↑ + 고등급 가중↑. 모두 모았으면 송곳니로 환산(창고 폭증 방지).
+  void _grantRunLoot() {
+    runLoot = [];
+    runLootFangs = 0;
+    final score = stage * 3 + kills ~/ 18 + time ~/ 28; // 성과 점수
+    final rolls = (1 + score ~/ 6).clamp(1, 6);
+    for (int i = 0; i < rolls; i++) {
+      final pool = kGear.where((g) => !ownedGear.contains(g.id)).toList();
+      if (pool.isEmpty) {
+        runLootFangs += 30; // 다 모음 → 송곳니 환산
+        continue;
+      }
+      // 등급 가중 — 성과(stage)가 높을수록 고등급이 더 잘 나옴
+      final weights = <double>[];
+      double tot = 0;
+      for (final g in pool) {
+        final favor = 1.0 + stage * 0.05 * g.rarity; // 고스테이지일수록 고등급 가중↑
+        final wgt = favor / (1 + g.rarity * 1.2);
+        weights.add(wgt);
+        tot += wgt;
+      }
+      double r = rng.nextDouble() * tot;
+      Gear pick = pool.first;
+      for (int j = 0; j < pool.length; j++) {
+        r -= weights[j];
+        if (r <= 0) {
+          pick = pool[j];
+          break;
+        }
+      }
+      ownedGear.add(pick.id);
+      equipped[pick.slot] ??= pick.id;
+      runLoot.add(pick);
+    }
+    if (runLootFangs > 0) fangs += runLootFangs;
+  }
+
+  // 최적 장착 — 각 슬롯에서 보유 중 가장 높은 등급을 자동 장착(관리 귀찮음 해소).
+  void autoEquipBest() {
+    for (final slot in GearSlot.values) {
+      Gear? best;
+      for (final g in kGear) {
+        if (g.slot != slot || !ownedGear.contains(g.id)) continue;
+        if (best == null || g.rarity > best.rarity) best = g;
+      }
+      if (best != null) equipped[slot] = best.id;
+    }
+    _saveMeta();
+  }
+
   // ── 충돌 ──
   void _collide(double dt) {
     // 투사체 vs 적
@@ -2271,6 +2324,7 @@ class World {
             prestigeFangMult)
         .round();
     fangs += runFangs;
+    _grantRunLoot(); // 성과 기반 전리품(장비) 드랍
     _evalAchievements();
     _saveRecords();
     _saveMeta();
@@ -2795,7 +2849,17 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ]),
           ),
           const SizedBox(height: 14),
-          // 주 동작: 이어하기 (+ 배속 토글, 해금 시)
+          // 상단: 소굴로(런 종료하고 거점 복귀)
+          SizedBox(
+            width: 320,
+            child: _actBtn('🏠  소굴로', P.panel, false,
+                () => setState(() => world.phase = GPhase.title)),
+          ),
+          const SizedBox(height: 14),
+          // 허브 타일 그리드 (단련/장비/창고/업적/무늬/설정)
+          SizedBox(width: 320, child: _hubGrid(from: GPhase.menu)),
+          const SizedBox(height: 14),
+          // 하단 주 동작: 이어하기 (+ 배속) — 엄지존(가장 자주 누름)
           SizedBox(
             width: 320,
             child: Row(children: [
@@ -2809,15 +2873,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                         () => setState(() => world.cycleSpeed()))),
               ],
             ]),
-          ),
-          const SizedBox(height: 14),
-          // 허브 타일 그리드 (단련/장비/창고/업적/무늬/설정)
-          SizedBox(width: 320, child: _hubGrid(from: GPhase.menu)),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: 320,
-            child: _actBtn('🏠  소굴로', P.panel, false,
-                () => setState(() => world.phase = GPhase.title)),
           ),
           const SizedBox(height: 9),
           SizedBox(
@@ -3976,6 +4031,26 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         child: Column(children: [
           _ohead('🎒', '창고', fangs: false, trailing: '보유 ${world.ownedGear.length}/${kGear.length}'),
           _slotTabs(),
+          // 최적 장착 — 슬롯마다 보유 최고 등급 자동 장착(관리 귀찮음 해소)
+          if (world.ownedGear.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: GestureDetector(
+                onTap: () => setState(() => world.autoEquipBest()),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: P.gold.withOpacity(0.16),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: P.gold.withOpacity(0.7)),
+                  ),
+                  child: const Text('✨  최적 장착 (각 슬롯 최고 등급 자동)',
+                      style: TextStyle(color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ),
           Expanded(
             child: owned.isEmpty
                 ? Center(
@@ -3983,7 +4058,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                       padding: const EdgeInsets.all(24),
                       child: Text(
                           _gearFilter == 0
-                              ? '아직 보유한 장비가 없습니다.\n보스를 잡거나 ⚒ 대장간에서 구매하세요.'
+                              ? '아직 보유한 장비가 없습니다.\n사냥에서 살아남으면 성과(스테이지·처치·시간)에 따라\n전리품이 드랍됩니다. ⚒ 대장간 구매도 가능.'
                               : '이 슬롯에 보유한 장비가 없습니다.',
                           textAlign: TextAlign.center,
                           style: const TextStyle(color: P.muted, fontSize: 13, height: 1.5)),
@@ -4851,6 +4926,38 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   style: const TextStyle(
                       color: P.goldSoft, fontSize: 13, fontWeight: FontWeight.bold)),
             ),
+            // 성과 기반 장비 전리품
+            if (world.runLoot.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text('🎁 새 장비 획득!',
+                  style: TextStyle(color: P.green, fontSize: 12.5, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 5),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 6,
+                runSpacing: 5,
+                children: world.runLoot
+                    .map((g) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.35),
+                            borderRadius: BorderRadius.circular(9),
+                            border: Border.all(color: kRarityCol[g.rarity].withOpacity(0.8)),
+                          ),
+                          child: Text('${g.icon} ${g.name}',
+                              style: TextStyle(
+                                  color: kRarityCol[g.rarity],
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold)),
+                        ))
+                    .toList(),
+              ),
+            ],
+            if (world.runLootFangs > 0) ...[
+              const SizedBox(height: 6),
+              Text('🦷 장비 모두 수집 — 송곳니 +${world.runLootFangs} 환산',
+                  style: const TextStyle(color: P.goldSoft, fontSize: 11.5)),
+            ],
             if (world.pendingAch.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text('🏆 새 업적 ${world.pendingAch.length}개 달성!',
