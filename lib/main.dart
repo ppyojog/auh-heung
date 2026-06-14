@@ -714,6 +714,37 @@ class World {
   // 밸런스 로그(런 단위) — 무기/스킬별 누적 데미지·킬. 복사해서 패치 근거로 사용.
   final Map<String, double> wDmg = {};
   final Map<String, int> wKill = {};
+  // 레벨 정규화용 — 무기별 가동시간(초)·레벨별 체류시간·레벨별 데미지 → DPS·레벨별 DPS 산출.
+  final Map<String, double> wUptime = {}; // lv>0로 보유한 총 시간
+  final Map<String, Map<int, double>> wLvTime = {}; // 레벨별 체류시간
+  final Map<String, Map<int, double>> wLvDmg = {}; // 레벨별 누적 데미지
+  static const List<String> kLeveled = ['claw', 'fang', 'roar', 'bolt', 'spike'];
+  int srcLevel(String src) {
+    switch (src) {
+      case 'claw':
+        return clawLv;
+      case 'fang':
+        return fangLv;
+      case 'roar':
+        return roarLv;
+      case 'bolt':
+        return boltLv;
+      case 'spike':
+        return spikeLv;
+    }
+    return 0;
+  }
+
+  // 매 프레임 — 보유 무기의 가동시간/레벨별 체류시간 누적(레벨별 DPS 정규화용)
+  void _trackBalance(double dt) {
+    for (final s in kLeveled) {
+      final lvl = srcLevel(s);
+      if (lvl <= 0) continue;
+      wUptime[s] = (wUptime[s] ?? 0) + dt;
+      final m = wLvTime.putIfAbsent(s, () => {});
+      m[lvl] = (m[lvl] ?? 0) + dt;
+    }
+  }
   bool gaveUp = false; // 이번 결과 화면이 '포기'인지(사망과 구분)
   // 밸런스 로그 라벨(소스키 → 표시명·현재레벨)
   static const Map<String, String> kSrcName = {
@@ -1347,6 +1378,9 @@ class World {
     _mileShown = 0;
     wDmg.clear(); // 밸런스 로그 리셋
     wKill.clear();
+    wUptime.clear();
+    wLvTime.clear();
+    wLvDmg.clear();
     gaveUp = false;
     level = 1;
     xp = 0;
@@ -1519,6 +1553,7 @@ class World {
     }
     if (flashT > 0) flashT = max(0, flashT - dt * 3.2);
     time += dt;
+    _trackBalance(dt); // 밸런스 로그 — 무기별 레벨/시간 누적
     if (berserkT > 0) berserkT = max(0, berserkT - dt);
     // 펫 타이니 — 이동 방향의 '뒤'를 360° 따라다님(움직이는 쪽 반대편으로 자동 조정)
     if (petHappyT > 0) petHappyT = max(0, petHappyT - dt);
@@ -2318,6 +2353,11 @@ class World {
     e.flash = 1;
     if (src.isNotEmpty) {
       wDmg[src] = (wDmg[src] ?? 0) + dmg; // 밸런스 로그 — 무기별 누적 데미지
+      final lvl = srcLevel(src);
+      if (lvl > 0) {
+        final m = wLvDmg.putIfAbsent(src, () => {});
+        m[lvl] = (m[lvl] ?? 0) + dmg; // 레벨별 데미지(레벨별 DPS 산출)
+      }
       e.lastSrc = src; // 킬 귀속용(마지막 타격자)
     }
     if (sp('freeze') && e.type != EType.boss) e.chill = 1.2; // 서리 손길
@@ -2597,39 +2637,54 @@ class World {
     phase = GPhase.dead; // 사망 화면 재사용 — 무엇을 얻었는지 쫙 보여주고 소굴로
   }
 
-  // 밸런스 로그 — 스킬 레벨·누적데미지·킬·점유율·장비·패시브를 정밀 텍스트로(복사해서 패치 근거로).
+  // 밸런스 로그 — 스킬 레벨·레벨별 체류시간/데미지/DPS·점유율·킬·장비·패시브를 정밀 텍스트로.
+  //  핵심: DPS = 데미지 / 가동시간(초). 늦게 얻은 무기가 불리하게 보이지 않도록 시간 정규화.
   String balanceLog() {
     final totD = wDmg.values.fold(0.0, (a, b) => a + b);
-    final lv = {'claw': clawLv, 'fang': fangLv, 'roar': roarLv, 'bolt': boltLv, 'spike': spikeLv};
     final evo = {'claw': clawEvo, 'fang': fangEvo, 'roar': roarEvo, 'bolt': boltEvo, 'spike': spikeEvo};
     final b = StringBuffer();
     b.writeln('[어흥 밸런스 로그]');
     b.writeln('ver $kSaveVer');
     b.writeln('결과: ${gaveUp ? "포기" : "사망"}');
     b.writeln('스테이지 $stage (최고 $maxStage) · diff ${diff.toStringAsFixed(2)}');
-    b.writeln('생존 ${World.mmss(time)} · Lv $level · 총 ${kills}킬');
+    b.writeln('생존 ${World.mmss(time)}(${time.round()}s) · Lv $level · 총 ${kills}킬');
     b.writeln('초상화단계 $portraitTier · 포식 $devour · 크리 ${(critChance * 100).toStringAsFixed(0)}%');
     b.writeln('획득: 🦷$runFangs 💎$runEssence 🔩$runOre');
-    b.writeln('-- 스킬별 누적데미지·킬 (데미지 점유율) --');
+    b.writeln('== 무기/스킬 (점유율 · DPS=데미지/가동초) ==');
     final keys = wDmg.keys.toList()..sort((a, c) => (wDmg[c] ?? 0).compareTo(wDmg[a] ?? 0));
     for (final k in keys) {
       final d = wDmg[k] ?? 0;
       final kl = wKill[k] ?? 0;
       final name = kSrcName[k] ?? k;
-      final lvStr = lv.containsKey(k) ? ' Lv${lv[k]}${(evo[k] ?? false) ? "★진화" : ""}' : '';
       final pct = totD > 0 ? (d / totD * 100) : 0.0;
-      b.writeln('$name$lvStr | dmg ${d.round()} (${pct.toStringAsFixed(1)}%) | kill $kl');
-    }
-    // 보유했지만 데미지 0(=미사용/약함)인 무기도 노출 — 밸런스 사각지대 파악용
-    for (final e in lv.entries) {
-      if (e.value > 0 && !wDmg.containsKey(e.key)) {
-        b.writeln('${kSrcName[e.key]} Lv${e.value} | dmg 0 (미사용)');
+      final leveled = kLeveled.contains(k);
+      final up = leveled ? (wUptime[k] ?? 0) : time; // 비레벨(아이템/궁극기)은 런 전체시간 기준
+      final dps = up > 0 ? d / up : 0;
+      final lvStr = leveled ? ' Lv${srcLevel(k)}${(evo[k] ?? false) ? "★진화" : ""}' : '';
+      b.writeln('$name$lvStr | dmg ${d.round()} (${pct.toStringAsFixed(1)}%) | kill $kl | 가동 ${up.round()}s | DPS ${dps.round()}');
+      if (leveled) {
+        final lt = wLvTime[k] ?? {};
+        final ld = wLvDmg[k] ?? {};
+        final lvls = ({...lt.keys, ...ld.keys}.toList())..sort();
+        for (final L in lvls) {
+          final t = lt[L] ?? 0;
+          final dd = ld[L] ?? 0;
+          final ldps = t > 0 ? dd / t : 0;
+          b.writeln('   Lv$L: ${t.round()}s · dmg ${dd.round()} · DPS ${ldps.round()}');
+        }
       }
     }
-    b.writeln('-- 패시브 --');
+    // 보유했지만 데미지 0(=미사용)인 무기 — 밸런스 사각지대
+    for (final s in kLeveled) {
+      final lv = srcLevel(s);
+      if (lv > 0 && !wDmg.containsKey(s)) {
+        b.writeln('${kSrcName[s]} Lv$lv | dmg 0 (미사용) | 가동 ${(wUptime[s] ?? 0).round()}s');
+      }
+    }
+    b.writeln('== 패시브 ==');
     b.writeln('야성$wildLv 가죽$hideLv 바람$windLv 굶주림$hungerLv 분노$rageLv');
     if (specials.isNotEmpty) b.writeln('특별스킬: ${specials.join(", ")}');
-    b.writeln('-- 장착 장비 --');
+    b.writeln('== 장착 장비 ==');
     for (final s in GearSlot.values) {
       final id = equipped[s];
       final g = id != null ? gearById(id) : null;
