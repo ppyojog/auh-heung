@@ -3241,7 +3241,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   width: 150,
                   height: 150,
                   child: CustomPaint(
-                      painter: HeroPainter(world.titleClock,
+                      painter: HeroPainter(world, _repaint,
                           kPortraits[world.maxPortrait.clamp(0, kPortraits.length - 1)].prog)),
                 ),
                 const SizedBox(height: 4),
@@ -4584,7 +4584,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     return GestureDetector(
       onTap: () => setState(() => world.dismissMorph()),
       child: Stack(children: [
-        Positioned.fill(child: CustomPaint(painter: MorphPainter(world))),
+        Positioned.fill(child: CustomPaint(painter: MorphPainter(world, _repaint))),
         // 왼쪽(이전) 아바타 아래 — 이전 이름
         Align(
           alignment: const Alignment(-0.46, 0.12),
@@ -6121,7 +6121,7 @@ class WorldPainter extends CustomPainter {
 // =============================================================================
 class MorphPainter extends CustomPainter {
   final World w;
-  MorphPainter(this.w);
+  MorphPainter(this.w, Listenable repaint) : super(repaint: repaint);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -6282,12 +6282,13 @@ class MorphPainter extends CustomPainter {
 //  메인화면 히어로 메달리온 — 숨쉬는 호랑이 아바타 + 회전 후광 (전부 코드)
 // =============================================================================
 class HeroPainter extends CustomPainter {
-  final double t;
+  final World w;
   final double prog; // 0=순한 양 ~ 1=완전한 호랑이 (내 최고 초상화)
-  HeroPainter(this.t, [this.prog = 1.0]);
+  HeroPainter(this.w, Listenable repaint, [this.prog = 1.0]) : super(repaint: repaint);
 
   @override
   void paint(Canvas canvas, Size size) {
+    final t = w.titleClock; // 라이브 클럭(60fps 리페인트 신호로 부드럽게)
     final cx = size.width / 2, cy = size.height / 2;
     final breathe = 1 + sin(t * 2) * 0.025;
     final r = size.width * 0.30 * breathe;
