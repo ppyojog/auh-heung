@@ -2795,17 +2795,19 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ]),
           ),
           const SizedBox(height: 14),
-          // 주 동작: 이어하기 / 사냥터 이동
+          // 주 동작: 이어하기 (+ 배속 토글, 해금 시)
           SizedBox(
             width: 320,
             child: Row(children: [
               Expanded(
                   child: _actBtn('▶  이어하기', P.gold, true,
                       () => setState(() => world.resume()))),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _actBtn('🗺  사냥터', P.cyan, true,
-                      () => setState(() => world.phase = GPhase.travel))),
+              if (world.maxGameSpeed > 1) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                    child: _actBtn('⏩  ${world.gameSpeed.clamp(1, world.maxGameSpeed)}x 배속', P.cyan, true,
+                        () => setState(() => world.cycleSpeed()))),
+              ],
             ]),
           ),
           const SizedBox(height: 14),
@@ -2814,11 +2816,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           const SizedBox(height: 14),
           SizedBox(
             width: 320,
-            child: _actBtn('🏠  소굴로 (세이브 선택)', P.panel, false,
-                () => setState(() {
-                      world.startStage = world.maxStage;
-                      world.phase = GPhase.title;
-                    })),
+            child: _actBtn('🏠  소굴로', P.panel, false,
+                () => setState(() => world.phase = GPhase.title)),
           ),
           const SizedBox(height: 9),
           SizedBox(
@@ -4873,10 +4872,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               world.phase = GPhase.status;
             }), dark: false),
         const SizedBox(height: 10),
-        _bigBtn('🏠  타이틀로', P.panel, () => setState(() {
-              world.startStage = world.maxStage;
-              world.phase = GPhase.title;
-            }), dark: false),
+        _bigBtn('🏠  소굴로', P.panel, () => setState(() => world.phase = GPhase.title),
+            dark: false),
       ]),
       ),
     );
