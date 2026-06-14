@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 const double kZoom = 0.7;
 
 // 세이브 버전 — 값이 바뀌면(=배포마다 갱신) 기존 세이브를 초기화한다(사용자 요청).
-const String kSaveVer = 'v2026.06.13-14';
+const String kSaveVer = 'v2026.06.14-15';
 
 void main() => runApp(const SurvivorApp());
 
@@ -68,6 +68,7 @@ class Enemy {
   double chill = 0; // 서리(특별스킬) 둔화 잔여시간
   bool elite = false; // 엘리트(정예) — 강하고 보상 확정
   bool dead = false;
+  String lastSrc = ''; // 밸런스 로그 — 마지막으로 피해 준 무기(킬 귀속)
   // 돌진 행동(엘리트·fast) — 텔레그래프 후 직선 돌진. 회피=포지셔닝 전략.
   double chargeCd = 0, windup = 0, charging = 0, cvx = 0, cvy = 0;
   Enemy(this.id, this.x, this.y, this.hp, this.maxHp, this.speed, this.dmg, this.radius, this.type)
@@ -261,36 +262,135 @@ class Gear {
       {this.dropOnly = false});
 }
 
-const List<Gear> kGear = [
-  // ── 무기 각인 (공격력·공속) — 대장간 구매 ──
-  Gear('w0', '무쇠 발톱', '🗡', GearSlot.weapon, 0, 40, {'dmg': 8}, '공격력 +8%'),
-  Gear('w1', '예리한 발톱', '🗡', GearSlot.weapon, 1, 95, {'dmg': 14, 'as': 8}, '공격력 +14% · 공속 +8%'),
-  Gear('w2', '폭풍의 발톱', '🗡', GearSlot.weapon, 2, 190, {'dmg': 22, 'as': 14}, '공격력 +22% · 공속 +14%'),
-  Gear('w3', '백호의 발톱', '🗡', GearSlot.weapon, 3, 340, {'dmg': 34, 'as': 18}, '전설 · 공격력 +34% · 공속 +18%'),
-  Gear('w4', '왕의 발톱', '🗡', GearSlot.weapon, 3, 560, {'dmg': 46, 'as': 24}, '전설 · 공격력 +46% · 공속 +24%'),
-  Gear('w5', '천공의 발톱', '🗡', GearSlot.weapon, 4, 900, {'dmg': 62, 'as': 30}, '신화 · 공격력 +62% · 공속 +30%'),
-  // ── 방어구 (체력·재생) — 대장간 구매 ──
-  Gear('a0', '두꺼운 가죽', '🛡', GearSlot.armor, 0, 35, {'hp': 35}, '최대체력 +35'),
-  Gear('a1', '상흔의 가죽', '🛡', GearSlot.armor, 1, 90, {'hp': 60, 'regen': 0.5}, '체력 +60 · 재생 0.5/s'),
-  Gear('a2', '강철 비늘', '🛡', GearSlot.armor, 2, 180, {'hp': 95, 'regen': 1.0}, '체력 +95 · 재생 1.0/s'),
-  Gear('a3', '불멸의 가죽', '🛡', GearSlot.armor, 3, 320, {'hp': 150, 'regen': 1.6}, '전설 · 체력 +150 · 재생 1.6/s'),
-  Gear('a4', '용골 갑주', '🛡', GearSlot.armor, 3, 560, {'hp': 210, 'regen': 2.2}, '전설 · 체력 +210 · 재생 2.2/s'),
-  Gear('a5', '태초의 비늘', '🛡', GearSlot.armor, 4, 900, {'hp': 300, 'regen': 3.0}, '신화 · 체력 +300 · 재생 3.0/s'),
-  // ── 장신구 (이동·수집·잡탕) — 대장간 구매 ──
-  Gear('t0', '바람 부적', '💍', GearSlot.trinket, 0, 35, {'spd': 6, 'pick': 12}, '이동 +6% · 수집 +12'),
-  Gear('t1', '탐욕의 부적', '💍', GearSlot.trinket, 1, 90, {'spd': 8, 'pick': 26}, '이동 +8% · 수집 +26'),
-  Gear('t2', '사냥꾼의 부적', '💍', GearSlot.trinket, 2, 180, {'spd': 12, 'pick': 30, 'as': 8}, '이동 +12% · 수집 +30 · 공속 +8%'),
-  Gear('t3', '폭군의 인장', '💍', GearSlot.trinket, 3, 320, {'spd': 14, 'dmg': 12, 'pick': 30}, '전설 · 이동 +14% · 공격 +12% · 수집 +30'),
-  Gear('t4', '제왕의 인장', '💍', GearSlot.trinket, 3, 560, {'spd': 16, 'dmg': 18, 'pick': 40}, '전설 · 이동 +16% · 공격 +18% · 수집 +40'),
-  Gear('t5', '천명의 인장', '💍', GearSlot.trinket, 4, 900, {'spd': 20, 'dmg': 26, 'as': 12, 'pick': 40}, '신화 · 이동 +20% · 공격 +26% · 공속 +12% · 수집 +40'),
-  // ── 🎁 필드 전용 (사냥 전리품으로만) — 구매 불가, 고유 복합 스탯 ──
-  Gear('wd0', '피에 젖은 발톱', '🩸', GearSlot.weapon, 4, 0, {'dmg': 44, 'as': 20, 'hp': 50}, '필드전용 · 공격 +44% · 공속 +20% · 체력 +50', dropOnly: true),
-  Gear('wd1', '약탈자의 갈고리', '🪝', GearSlot.weapon, 4, 0, {'dmg': 50, 'pick': 50}, '필드전용 · 공격 +50% · 수집 +50', dropOnly: true),
-  Gear('ad0', '대지의 비늘', '🐢', GearSlot.armor, 4, 0, {'hp': 200, 'regen': 2.4, 'spd': 8}, '필드전용 · 체력 +200 · 재생 2.4/s · 이동 +8%', dropOnly: true),
-  Gear('ad1', '광폭의 갑주', '🔥', GearSlot.armor, 4, 0, {'hp': 150, 'dmg': 16, 'as': 14}, '필드전용 · 체력 +150 · 공격 +16% · 공속 +14%', dropOnly: true),
-  Gear('td0', '풍요의 뿔', '🌽', GearSlot.trinket, 4, 0, {'pick': 70, 'spd': 14, 'regen': 1.2}, '필드전용 · 수집 +70 · 이동 +14% · 재생 1.2/s', dropOnly: true),
-  Gear('td1', '야수왕의 징표', '👑', GearSlot.trinket, 4, 0, {'dmg': 24, 'as': 18, 'spd': 12}, '필드전용 · 공격 +24% · 공속 +18% · 이동 +12%', dropOnly: true),
+// 수집 장비 카탈로그 — 테마 패밀리 × 레어도(0~4)로 대량 생성(수집 재미 ↑).
+//  슬롯당 8계열 × 5단계 = 120 + 시그니처 필드전용 유니크 6 = 126종.
+//  tier 0~3 = 대장간 구매(🔩 광석), tier 4(신화) = 필드 전리품 전용(구매 불가, 추구 아이템).
+const List<int> _gDmg = [6, 11, 17, 26, 38];
+const List<int> _gAs = [5, 8, 12, 16, 22];
+const List<int> _gHp = [30, 55, 90, 140, 210];
+const List<double> _gReg = [0.3, 0.6, 1.0, 1.6, 2.4];
+const List<int> _gSpd = [4, 6, 9, 12, 16];
+const List<int> _gPick = [10, 18, 28, 40, 55];
+const List<int> _gCost = [40, 95, 190, 360, 0];
+const List<String> _gAdj = ['거친', '단단한', '정교한', '전설의', '신화의'];
+
+class _Fam {
+  final GearSlot slot;
+  final String core, icon;
+  final Map<String, double> w; // 스탯 가중치(키: dmg/as/hp/spd/pick/regen)
+  const _Fam(this.slot, this.core, this.icon, this.w);
+}
+
+const List<_Fam> _families = [
+  // 무기 — 공격력/공속 중심
+  _Fam(GearSlot.weapon, '무쇠 발톱', '🗡', {'dmg': 1.0}),
+  _Fam(GearSlot.weapon, '예리한 송곳니', '🦷', {'dmg': 0.8, 'as': 1.0}),
+  _Fam(GearSlot.weapon, '폭풍 발톱', '🌪', {'dmg': 0.6, 'as': 1.3}),
+  _Fam(GearSlot.weapon, '맹수의 이빨', '🐯', {'dmg': 1.1, 'as': 0.5}),
+  _Fam(GearSlot.weapon, '화염 발톱', '🔥', {'dmg': 1.2, 'as': 0.3}),
+  _Fam(GearSlot.weapon, '서리 발톱', '❄', {'dmg': 0.9, 'pick': 0.5}),
+  _Fam(GearSlot.weapon, '사냥꾼 작살', '🪝', {'dmg': 0.95, 'pick': 0.7}),
+  _Fam(GearSlot.weapon, '처형자의 낫', '⚔', {'dmg': 1.35}),
+  // 방어구 — 체력/재생 중심
+  _Fam(GearSlot.armor, '두꺼운 가죽', '🛡', {'hp': 1.0}),
+  _Fam(GearSlot.armor, '강철 비늘', '🐊', {'hp': 0.85, 'regen': 1.0}),
+  _Fam(GearSlot.armor, '용골 갑주', '🐉', {'hp': 1.0, 'regen': 1.2}),
+  _Fam(GearSlot.armor, '대지 등딱지', '🐢', {'hp': 0.9, 'spd': 0.6}),
+  _Fam(GearSlot.armor, '불굴의 흉갑', '💠', {'hp': 1.1, 'regen': 0.7}),
+  _Fam(GearSlot.armor, '산악의 갑주', '⛰', {'hp': 1.35}),
+  _Fam(GearSlot.armor, '가시 갑주', '🌵', {'hp': 0.8, 'dmg': 0.4}),
+  _Fam(GearSlot.armor, '수호의 망토', '🧣', {'hp': 0.85, 'pick': 0.6}),
+  // 장신구 — 이동/수집/잡탕
+  _Fam(GearSlot.trinket, '바람 부적', '🌬', {'spd': 1.0, 'pick': 0.6}),
+  _Fam(GearSlot.trinket, '탐욕의 반지', '💰', {'pick': 1.2}),
+  _Fam(GearSlot.trinket, '사냥꾼 징표', '🎯', {'spd': 0.8, 'as': 0.7}),
+  _Fam(GearSlot.trinket, '폭군의 인장', '👑', {'dmg': 0.7, 'spd': 0.8}),
+  _Fam(GearSlot.trinket, '풍요의 뿔', '🌽', {'pick': 1.0, 'regen': 0.8}),
+  _Fam(GearSlot.trinket, '신속의 깃털', '🪶', {'spd': 1.2}),
+  _Fam(GearSlot.trinket, '제왕의 보석', '💎', {'dmg': 0.6, 'as': 0.6, 'spd': 0.6}),
+  _Fam(GearSlot.trinket, '야수 목걸이', '📿', {'dmg': 0.8, 'as': 0.7}),
 ];
+
+String _gStatLabel(String k, double v) {
+  switch (k) {
+    case 'dmg':
+      return '공격 +${v.round()}%';
+    case 'as':
+      return '공속 +${v.round()}%';
+    case 'hp':
+      return '체력 +${v.round()}';
+    case 'regen':
+      return '재생 ${v.toStringAsFixed(1)}/s';
+    case 'spd':
+      return '이동 +${v.round()}%';
+    case 'pick':
+      return '수집 +${v.round()}';
+  }
+  return '';
+}
+
+List<Gear> _buildGear() {
+  final out = <Gear>[];
+  int n = 0;
+  for (final f in _families) {
+    for (int t = 0; t < 5; t++) {
+      final stats = <String, double>{};
+      f.w.forEach((k, weight) {
+        double base;
+        switch (k) {
+          case 'dmg':
+            base = _gDmg[t].toDouble();
+            break;
+          case 'as':
+            base = _gAs[t].toDouble();
+            break;
+          case 'hp':
+            base = _gHp[t].toDouble();
+            break;
+          case 'regen':
+            base = _gReg[t];
+            break;
+          case 'spd':
+            base = _gSpd[t].toDouble();
+            break;
+          case 'pick':
+            base = _gPick[t].toDouble();
+            break;
+          default:
+            base = 0;
+        }
+        final val = k == 'regen'
+            ? double.parse((base * weight).toStringAsFixed(1))
+            : (base * weight).roundToDouble();
+        if (val > 0) stats[k] = val;
+      });
+      final name = '${_gAdj[t]} ${f.core}';
+      final desc =
+          '${kRarityName[t]} · ${stats.entries.map((e) => _gStatLabel(e.key, e.value)).join(' · ')}';
+      final drop = t == 4; // 신화는 필드 전리품 전용(구매 불가)
+      out.add(Gear('g${n++}', name, f.icon, f.slot, t, drop ? 0 : _gCost[t], stats, desc,
+          dropOnly: drop));
+    }
+  }
+  // 시그니처 필드전용 유니크(신화) — 복합 스탯 추구 아이템(루트 감성)
+  out.addAll(const [
+    Gear('u0', '피에 젖은 발톱', '🩸', GearSlot.weapon, 4, 0, {'dmg': 44, 'as': 20, 'hp': 50},
+        '신화 · 공격 +44% · 공속 +20% · 체력 +50', dropOnly: true),
+    Gear('u1', '약탈자의 갈고리', '🪝', GearSlot.weapon, 4, 0, {'dmg': 50, 'pick': 50},
+        '신화 · 공격 +50% · 수집 +50', dropOnly: true),
+    Gear('u2', '대지의 비늘', '🐢', GearSlot.armor, 4, 0, {'hp': 220, 'regen': 2.6, 'spd': 8},
+        '신화 · 체력 +220 · 재생 2.6/s · 이동 +8%', dropOnly: true),
+    Gear('u3', '광폭의 갑주', '🔥', GearSlot.armor, 4, 0, {'hp': 160, 'dmg': 16, 'as': 14},
+        '신화 · 체력 +160 · 공격 +16% · 공속 +14%', dropOnly: true),
+    Gear('u4', '풍요의 대뿔', '🌽', GearSlot.trinket, 4, 0, {'pick': 70, 'spd': 14, 'regen': 1.2},
+        '신화 · 수집 +70 · 이동 +14% · 재생 1.2/s', dropOnly: true),
+    Gear('u5', '야수왕의 징표', '👑', GearSlot.trinket, 4, 0, {'dmg': 26, 'as': 18, 'spd': 12},
+        '신화 · 공격 +26% · 공속 +18% · 이동 +12%', dropOnly: true),
+  ]);
+  return out;
+}
+
+final List<Gear> kGear = _buildGear();
 
 const List<Color> kRarityCol = [P.parch, P.cyan, P.purple, P.gold, Color(0xFFFF6A3D)];
 const List<String> kRarityName = ['일반', '희귀', '영웅', '전설', '신화'];
@@ -611,6 +711,21 @@ class World {
   double titleClock = 0; // 타이틀(메인) 배경·로고 애니메이션용 시계
   int kills = 0;
   int _mileShown = 0; // 생존 마일스톤 연출 카운터
+  // 밸런스 로그(런 단위) — 무기/스킬별 누적 데미지·킬. 복사해서 패치 근거로 사용.
+  final Map<String, double> wDmg = {};
+  final Map<String, int> wKill = {};
+  bool gaveUp = false; // 이번 결과 화면이 '포기'인지(사망과 구분)
+  // 밸런스 로그 라벨(소스키 → 표시명·현재레벨)
+  static const Map<String, String> kSrcName = {
+    'claw': '발톱',
+    'fang': '회전송곳니',
+    'roar': '포효',
+    'bolt': '벼락',
+    'spike': '가시밭',
+    'rage': '광기해방',
+    'bomb': '폭탄(아이템)',
+    'explode': '연쇄폭발(스킬)',
+  };
   // ── 게임필(juice) — 검증된 기법: 크리티컬·히트스톱·스크린플래시 ──
   double _hitStop = 0; // 히트스톱(타격 순간 미세 정지)
   double _hsCd = 0; // 히트스톱 쿨다운(잦은 크리로 슬로모 누적 방지)
@@ -1230,6 +1345,9 @@ class World {
     time = 0;
     kills = 0;
     _mileShown = 0;
+    wDmg.clear(); // 밸런스 로그 리셋
+    wKill.clear();
+    gaveUp = false;
     level = 1;
     xp = 0;
     xpNext = 3;
@@ -1331,7 +1449,7 @@ class World {
     berserkT = 5.0;
     final dmg = 60 + level * 12.0;
     for (final e in enemies) {
-      _hurt(e, dmg);
+      _hurt(e, dmg, 'rage');
       final d = sqrt((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py));
       if (d > 0.1) {
         e.x += (e.x - px) / d * 70;
@@ -1704,7 +1822,7 @@ class World {
             }
             if (nxt == null) break;
             lines.add(LineFx(fx, fy, nxt.x, nxt.y, P.cyan));
-            _dealHit(nxt, dmg, P.cyan, 12);
+            _dealHit(nxt, dmg, P.cyan, 12, 'bolt');
             hitSet.add(nxt.id);
             fx = nxt.x;
             fy = nxt.y;
@@ -1741,7 +1859,7 @@ class World {
           for (final e in enemies) {
             final rr = radius + e.radius;
             if ((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy) <= rr * rr) {
-              _dealHit(e, dmg, P.green, 12);
+              _dealHit(e, dmg, P.green, 12, 'spike');
             }
           }
           // 솟아오르는 가시(삼각 기둥) — 레벨만큼 개수. Lv1은 1개만.
@@ -1760,7 +1878,7 @@ class World {
         for (final e in enemies) {
           final d = sqrt((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py));
           if (d <= radius + e.radius) {
-            _dealHit(e, dmg, P.gold, 12);
+            _dealHit(e, dmg, P.gold, 12, 'roar');
             // 살짝 밀어내기
             if (d > 0.1) {
               e.x += (e.x - px) / d * push;
@@ -1911,7 +2029,7 @@ class World {
       // 화면 전체 폭발 (약한 적 청소)
       final dmg = 50 + level * 9.0;
       for (final e in enemies) {
-        _hurt(e, dmg);
+        _hurt(e, dmg, 'bomb');
       }
       pulses.add(Pulse(px, py, max(w, h), 0.5, P.red));
       pulses.add(Pulse(px, py, max(w, h) * 0.55, 0.4, const Color(0xFFE8702E)));
@@ -2018,7 +2136,7 @@ class World {
         if (e.dead || b.hitIds.contains(e.id)) continue;
         final rr = (b.radius + e.radius);
         if ((b.x - e.x) * (b.x - e.x) + (b.y - e.y) * (b.y - e.y) <= rr * rr) {
-          _dealHit(e, b.dmg, P.goldSoft, 13);
+          _dealHit(e, b.dmg, P.goldSoft, 13, 'claw');
           sfx.play('hit', gapMs: 45);
           b.hitIds.add(e.id);
           if (b.pierce <= 0) {
@@ -2046,7 +2164,7 @@ class World {
           if (e.dead) continue;
           final rr = fr + e.radius;
           if ((fx - e.x) * (fx - e.x) + (fy - e.y) * (fy - e.y) <= rr * rr) {
-            _hurt(e, fdps * dt);
+            _hurt(e, fdps * dt, 'fang');
             if (rng.nextDouble() < 0.04) {
               _float(e.x, e.y - e.radius - 4, fdps.round().toString(), P.cyan, 11);
             }
@@ -2073,6 +2191,9 @@ class World {
       if (e.hp <= 0 && !e.dead) {
         e.dead = true;
         kills += 1;
+        if (e.lastSrc.isNotEmpty) {
+          wKill[e.lastSrc] = (wKill[e.lastSrc] ?? 0) + 1; // 밸런스 로그 — 무기별 킬
+        }
         petHappyT = 1.0; // 펫이 기뻐함
         // [포식] 삼켜서 회복 + 성장
         devour += 1;
@@ -2135,7 +2256,7 @@ class World {
           for (final o in enemies) {
             if (o.dead || o.id == e.id) continue;
             if ((o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y) <= xr * xr) {
-              _hurt(o, xd);
+              _hurt(o, xd, 'explode');
             }
           }
           pulses.add(Pulse(e.x, e.y, xr, 0.3, P.gold));
@@ -2192,17 +2313,21 @@ class World {
     if (newborn.isNotEmpty) enemies.addAll(newborn);
   }
 
-  void _hurt(Enemy e, double dmg) {
+  void _hurt(Enemy e, double dmg, [String src = '']) {
     e.hp -= dmg;
     e.flash = 1;
+    if (src.isNotEmpty) {
+      wDmg[src] = (wDmg[src] ?? 0) + dmg; // 밸런스 로그 — 무기별 누적 데미지
+      e.lastSrc = src; // 킬 귀속용(마지막 타격자)
+    }
     if (sp('freeze') && e.type != EType.boss) e.chill = 1.2; // 서리 손길
   }
 
   // 단발 타격 — 크리티컬 판정 + 데미지 숫자 연출(크리=금색 큰 숫자 + 히트스톱). 검증된 게임필.
-  void _dealHit(Enemy e, double dmg, Color col, double size) {
+  void _dealHit(Enemy e, double dmg, Color col, double size, [String src = '']) {
     final crit = rng.nextDouble() < critChance;
     final d = crit ? dmg * 2.0 : dmg;
-    _hurt(e, d);
+    _hurt(e, d, src);
     // 데미지 숫자는 웹에서 비싸므로 크리만 항상, 일반 타격은 일부만 표시(렉 방지)
     if (crit) {
       _float(e.x, e.y - e.radius - 6, '${d.round()}!', P.gold, size + 7);
@@ -2445,6 +2570,7 @@ class World {
 
   void _onDeath() {
     phase = GPhase.dead;
+    gaveUp = false;
     _hapticBig = true;
     startStage = 1; // 죽으면 항상 스테이지1부터(로그라이트). 스테이지 선택 없음.
     sfx.play('death');
@@ -2456,7 +2582,7 @@ class World {
     _saveMeta();
   }
 
-  // 포기(소굴로 복귀) — 죽지 않아도 그동안 번 보상을 지급(한 번). 사용자 요청.
+  // 포기 — 죽지 않아도 그동안 번 보상을 지급(한 번) + 결과(보상목록) 화면을 보여준다. 사용자 요청.
   void abandonRun() {
     if (phase == GPhase.menu || phase == GPhase.playing) {
       if (time > bestTime) bestTime = time;
@@ -2467,7 +2593,49 @@ class World {
       _saveMeta();
     }
     startStage = 1;
-    phase = GPhase.title;
+    gaveUp = true;
+    phase = GPhase.dead; // 사망 화면 재사용 — 무엇을 얻었는지 쫙 보여주고 소굴로
+  }
+
+  // 밸런스 로그 — 스킬 레벨·누적데미지·킬·점유율·장비·패시브를 정밀 텍스트로(복사해서 패치 근거로).
+  String balanceLog() {
+    final totD = wDmg.values.fold(0.0, (a, b) => a + b);
+    final lv = {'claw': clawLv, 'fang': fangLv, 'roar': roarLv, 'bolt': boltLv, 'spike': spikeLv};
+    final evo = {'claw': clawEvo, 'fang': fangEvo, 'roar': roarEvo, 'bolt': boltEvo, 'spike': spikeEvo};
+    final b = StringBuffer();
+    b.writeln('[어흥 밸런스 로그]');
+    b.writeln('ver $kSaveVer');
+    b.writeln('결과: ${gaveUp ? "포기" : "사망"}');
+    b.writeln('스테이지 $stage (최고 $maxStage) · diff ${diff.toStringAsFixed(2)}');
+    b.writeln('생존 ${World.mmss(time)} · Lv $level · 총 ${kills}킬');
+    b.writeln('초상화단계 $portraitTier · 포식 $devour · 크리 ${(critChance * 100).toStringAsFixed(0)}%');
+    b.writeln('획득: 🦷$runFangs 💎$runEssence 🔩$runOre');
+    b.writeln('-- 스킬별 누적데미지·킬 (데미지 점유율) --');
+    final keys = wDmg.keys.toList()..sort((a, c) => (wDmg[c] ?? 0).compareTo(wDmg[a] ?? 0));
+    for (final k in keys) {
+      final d = wDmg[k] ?? 0;
+      final kl = wKill[k] ?? 0;
+      final name = kSrcName[k] ?? k;
+      final lvStr = lv.containsKey(k) ? ' Lv${lv[k]}${(evo[k] ?? false) ? "★진화" : ""}' : '';
+      final pct = totD > 0 ? (d / totD * 100) : 0.0;
+      b.writeln('$name$lvStr | dmg ${d.round()} (${pct.toStringAsFixed(1)}%) | kill $kl');
+    }
+    // 보유했지만 데미지 0(=미사용/약함)인 무기도 노출 — 밸런스 사각지대 파악용
+    for (final e in lv.entries) {
+      if (e.value > 0 && !wDmg.containsKey(e.key)) {
+        b.writeln('${kSrcName[e.key]} Lv${e.value} | dmg 0 (미사용)');
+      }
+    }
+    b.writeln('-- 패시브 --');
+    b.writeln('야성$wildLv 가죽$hideLv 바람$windLv 굶주림$hungerLv 분노$rageLv');
+    if (specials.isNotEmpty) b.writeln('특별스킬: ${specials.join(", ")}');
+    b.writeln('-- 장착 장비 --');
+    for (final s in GearSlot.values) {
+      final id = equipped[s];
+      final g = id != null ? gearById(id) : null;
+      b.writeln('${s.name}: ${g?.name ?? "-"}${g != null ? " [${g.desc}]" : ""}');
+    }
+    return b.toString();
   }
 
   void _grantAch(String id, int reward) {
@@ -2687,6 +2855,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   Duration _last = Duration.zero;
   final RepaintTicker _repaint = RepaintTicker(); // 캔버스만 60fps 리페인트(위젯 리빌드 없이)
   double _hudClock = 0; // HUD 위젯 리빌드 스로틀(저빈도)
+  bool _logCopied = false; // 결과 화면 — 밸런스 로그 복사 피드백
 
   @override
   void initState() {
@@ -2758,6 +2927,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     if (anim) _repaint.tick();
     // HUD·버튼·오버레이 위젯은 페이즈 변화 시 + 저빈도(~12fps)로만 리빌드(체력/콤보/타이머는 이 정도면 충분)
     final phaseChanged = world.phase != _lastPhase;
+    if (phaseChanged && world.phase == GPhase.dead) _logCopied = false; // 새 결과화면 → 복사 상태 초기화
     _hudClock += dt;
     if (mounted && (phaseChanged || (anim && _hudClock >= 0.08))) {
       _hudClock = 0;
@@ -5093,11 +5263,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       child: SingleChildScrollView(
       padding: const EdgeInsets.all(28),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('☠️', style: TextStyle(fontSize: 60)),
+        Text(world.gaveUp ? '🏳️' : '☠️', style: const TextStyle(fontSize: 60)),
         const SizedBox(height: 10),
-        const Text('쓰러지다',
+        Text(world.gaveUp ? '사냥을 멈추다' : '쓰러지다',
             style: TextStyle(
-                color: P.red, fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 3)),
+                color: world.gaveUp ? P.gold : P.red,
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 3)),
         const SizedBox(height: 18),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
@@ -5178,6 +5351,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               world.statusReturn = GPhase.dead;
               world.phase = GPhase.status;
             }), dark: false),
+        const SizedBox(height: 10),
+        _bigBtn(_logCopied ? '✅  복사됨! (개발자에게 전달)' : '📋  스킬 밸런스 로그 복사', P.panel, () {
+          Clipboard.setData(ClipboardData(text: world.balanceLog()));
+          setState(() => _logCopied = true);
+        }, dark: false),
+        const SizedBox(height: 4),
+        const Text('어떤 스킬이 세고 약한지 정밀 기록 — 복사해서 보내주시면 밸런스를 맞춥니다.',
+            textAlign: TextAlign.center, style: TextStyle(color: P.muted, fontSize: 10.5)),
         const SizedBox(height: 10),
         _bigBtn('🏠  소굴로', P.panel, () => setState(() => world.phase = GPhase.title),
             dark: false),
@@ -5992,7 +6173,10 @@ class WorldPainter extends CustomPainter {
     final hurt = w.contactCdView > 0;
     final p = w.tigerProg.clamp(0.0, 1.0); // 0=양, 1=완전한 호랑이
     const sheepCol = Color(0xFFF3ECDF); // 양털 크림색
-    final col = hurt ? P.red : Color.lerp(sheepCol, w.skinColor, p)!; // 성장할수록 스킨색(호랑이)로
+    // 무늬를 사면 양 단계부터 색이 비친다(기본=순한 양). 호랑이로 갈수록 100% 무늬색.
+    final skinFloor = w.skin == 'default' ? 0.0 : 0.4;
+    final skinMix = (skinFloor + (1 - skinFloor) * p).clamp(0.0, 1.0);
+    final col = hurt ? P.red : Color.lerp(sheepCol, w.skinColor, skinMix)!;
     final r = w.pr * w.growScale;
     final t = w.time;
     final moving = w.dirx != 0 || w.diry != 0;
@@ -6247,8 +6431,9 @@ class MorphPainter extends CustomPainter {
   void _avatar(Canvas canvas, double cx, double cy, double r, double tg, double t, double a) {
     if (r < 1) return;
     const sheepCol = Color(0xFFF3ECDF);
-    // 착용한 무늬(스킨)가 초상화에도 반영 — 스킨을 바꾸면 메인 호랑이가 바로 바뀐다.
-    final col0 = Color.lerp(sheepCol, w.skinColor, tg)!;
+    // 착용한 무늬(스킨)가 초상화에도 반영 — 양 단계부터 색이 비치고, 스킨을 바꾸면 바로 바뀐다.
+    final skinFloor = w.skin == 'default' ? 0.0 : 0.4;
+    final col0 = Color.lerp(sheepCol, w.skinColor, (skinFloor + (1 - skinFloor) * tg).clamp(0.0, 1.0))!;
     final col = col0.withOpacity(a);
     final stripe = Color.lerp(const Color(0xFF3A2606),
         Color.lerp(w.skinColor, Colors.black, 0.55)!, tg * 0.9)!;
