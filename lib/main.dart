@@ -552,6 +552,48 @@ const List<Skin> kSkins = [
   Skin('royal', '황금 폭군', '👑', Color(0xFFFFD54F), 160),
 ];
 
+// 무늬 미리보기 — 몸색 + 그 무늬(줄무늬) 색을 작은 호랑이 얼굴로 보여준다(고른 게 뭔지 한눈에).
+class SkinSwatchPainter extends CustomPainter {
+  final Color body;
+  const SkinSwatchPainter(this.body);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2, cy = size.height / 2;
+    final r = size.width * 0.42;
+    final stripe = Color.lerp(body, Colors.black, 0.55)!;
+    // 귀
+    final ear = Paint()..color = body;
+    final ears = Path()
+      ..moveTo(cx - r * 0.85, cy - r * 0.45)
+      ..lineTo(cx - r * 0.45, cy - r * 1.25)
+      ..lineTo(cx - r * 0.05, cy - r * 0.6)
+      ..close()
+      ..moveTo(cx + r * 0.85, cy - r * 0.45)
+      ..lineTo(cx + r * 0.45, cy - r * 1.25)
+      ..lineTo(cx + r * 0.05, cy - r * 0.6)
+      ..close();
+    canvas.drawPath(ears, ear);
+    // 얼굴
+    canvas.drawCircle(Offset(cx, cy), r, Paint()..color = body);
+    // 줄무늬(무늬!)
+    final st = Paint()
+      ..color = stripe
+      ..strokeWidth = r * 0.16
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(cx - r * 0.5, cy - r * 0.55), Offset(cx - r * 0.2, cy - r * 0.2), st);
+    canvas.drawLine(Offset(cx + r * 0.5, cy - r * 0.55), Offset(cx + r * 0.2, cy - r * 0.2), st);
+    canvas.drawLine(Offset(cx, cy - r * 0.72), Offset(cx, cy - r * 0.34), st);
+    // 눈·코
+    final dark = Paint()..color = const Color(0xFF160F06);
+    canvas.drawCircle(Offset(cx - r * 0.36, cy - r * 0.02), r * 0.16, dark);
+    canvas.drawCircle(Offset(cx + r * 0.36, cy - r * 0.02), r * 0.16, dark);
+    canvas.drawCircle(Offset(cx, cy + r * 0.32), r * 0.12, dark);
+  }
+
+  @override
+  bool shouldRepaint(SkinSwatchPainter old) => old.body != body;
+}
+
 // =============================================================================
 //  월드 / 게임 상태 + 업데이트 루프
 // =============================================================================
@@ -3897,13 +3939,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     ),
                     child: Row(children: [
                       Container(
-                        width: 30,
-                        height: 30,
+                        width: 38,
+                        height: 38,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: swatch,
-                          boxShadow: [BoxShadow(color: swatch.withOpacity(0.6), blurRadius: 8)],
+                          color: const Color(0xFF1A130C),
+                          boxShadow: [BoxShadow(color: swatch.withOpacity(0.5), blurRadius: 8)],
                         ),
+                        child: CustomPaint(painter: SkinSwatchPainter(swatch)),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -5959,7 +6002,9 @@ class WorldPainter extends CustomPainter {
     final sq = 1 + (moving ? bob * 0.10 : bob * 0.045);
     final fw = r * 2 / (1 + (sq - 1) * 0.5);
     final fh = r * 2 * sq;
-    final stripeCol = const Color(0xFF3A2606);
+    // 무늬 — 스킨에 따라 줄무늬 색도 달라진다(이름값: '무늬'). 성장할수록 또렷하게.
+    final stripeCol = Color.lerp(const Color(0xFF3A2606),
+        Color.lerp(w.skinColor, Colors.black, 0.55)!, p * 0.9)!;
 
     // 활성 특별스킬 시각 표시 — 효과가 눈에 보이게(직관성)
     if (w.sp('magnet')) {
@@ -6202,9 +6247,11 @@ class MorphPainter extends CustomPainter {
   void _avatar(Canvas canvas, double cx, double cy, double r, double tg, double t, double a) {
     if (r < 1) return;
     const sheepCol = Color(0xFFF3ECDF);
-    final col0 = Color.lerp(sheepCol, P.gold, tg)!;
+    // 착용한 무늬(스킨)가 초상화에도 반영 — 스킨을 바꾸면 메인 호랑이가 바로 바뀐다.
+    final col0 = Color.lerp(sheepCol, w.skinColor, tg)!;
     final col = col0.withOpacity(a);
-    const stripe = Color(0xFF3A2606);
+    final stripe = Color.lerp(const Color(0xFF3A2606),
+        Color.lerp(w.skinColor, Colors.black, 0.55)!, tg * 0.9)!;
     // 안광
     canvas.drawCircle(Offset(cx, cy), r * 1.9, Paint()..color = P.gold.withOpacity((0.10 + 0.12 * tg) * a));
     // 양털
