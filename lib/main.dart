@@ -773,6 +773,8 @@ class World {
   //  높은 스테이지 = 플레이어가 고른 난이도 = 보상도 비례↑ (VS의 Curse식 자기 난이도 조절).
   // 고스테이지일수록 더 가파르게(후반 긴장↑). 초반(온보딩)은 그대로 완만.
   double diffForStage(int s) => (0.7 + (s - 1) * 0.09 + (s > 8 ? (s - 8) * 0.03 : 0)).clamp(0.5, 99.0).toDouble();
+  // 무한 맵 스폰 반경 — 뷰포트 반대각선 바로 밖(화면에 안 보이는 곳에서 등장)
+  double get _spawnRadius => sqrt(w * w + h * h) / 2 + 50;
   void _applyStageDiff() => diff = diffForStage(stage);
   // 다음 스테이지까지 시간 — 더 짧게(빠른 진행감·잦은 분위기 전환)
   double _stageDuration(int s) => (10.0 + s * 1.8).clamp(10.0, 32.0).toDouble();
@@ -1422,8 +1424,9 @@ class World {
       py += diry * speed * dt;
       face = atan2(diry, dirx);
     }
-    px = px.clamp(pr, w - pr);
-    py = py.clamp(pr, h - pr);
+    // 무한 맵 — 경계 클램프 없음(자유 이동). 부동소수 안정용으로만 아주 큰 범위 제한.
+    px = px.clamp(-1e6, 1e6);
+    py = py.clamp(-1e6, 1e6);
 
     _spawn(dt);
     _fireWeapons(dt);
@@ -1508,22 +1511,11 @@ class World {
   }
 
   void _spawnOne() {
-    // 화면 밖 가장자리
-    double x, y;
-    final side = rng.nextInt(4);
-    if (side == 0) {
-      x = rng.nextDouble() * w;
-      y = -20;
-    } else if (side == 1) {
-      x = rng.nextDouble() * w;
-      y = h + 20;
-    } else if (side == 2) {
-      x = -20;
-      y = rng.nextDouble() * h;
-    } else {
-      x = w + 20;
-      y = rng.nextDouble() * h;
-    }
+    // 무한 맵 — 플레이어 주변 화면 밖 링에서 스폰(어디로 가든 사방에서 몰려옴)
+    final ang = rng.nextDouble() * 6.2831853;
+    final dist = _spawnRadius + rng.nextDouble() * 60;
+    final x = px + cos(ang) * dist;
+    final y = py + sin(ang) * dist;
     // 타입 결정 — 스테이지가 오를수록 새 적 해금(다양성). 초반은 잡몹·떼거리 위주.
     EType t = EType.grunt;
     final roll = rng.nextDouble();
@@ -1572,10 +1564,12 @@ class World {
   }
 
   void _spawnBoss() {
-    final x = px + (rng.nextBool() ? 1 : -1) * w * 0.5;
-    final y = py + (rng.nextBool() ? 1 : -1) * h * 0.4;
+    // 무한 맵 — 플레이어 주변 화면 밖에서 강림
+    final ang = rng.nextDouble() * 6.2831853;
+    final x = px + cos(ang) * _spawnRadius;
+    final y = py + sin(ang) * _spawnRadius;
     final base = (240 + scaleT * 6) * diff;
-    enemies.add(Enemy(_eid++, x.clamp(0.0, w), y.clamp(0.0, h), base, base, 40, (22 + scaleT * 0.08) * diff, 30, EType.boss));
+    enemies.add(Enemy(_eid++, x, y, base, base, 40, (22 + scaleT * 0.08) * diff, 30, EType.boss));
     pulses.add(Pulse(px, py, 200, 0.6, P.blood));
     _float(px, py - 60, '⚠ 의회의 거대 맹수 강림', P.red, 18);
     _shakeAdd(12);
@@ -1718,7 +1712,8 @@ class World {
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.life -= dt;
-      if (b.life <= 0 || b.x < -30 || b.x > w + 30 || b.y < -30 || b.y > h + 30) {
+      if (b.life <= 0 ||
+          ((b.x - px) * (b.x - px) + (b.y - py) * (b.y - py)) > _spawnRadius * _spawnRadius * 2.25) {
         b.dead = true;
       }
     }
@@ -1771,6 +1766,10 @@ class World {
         }
       }
     }
+    // 무한 맵 — 플레이어가 멀리 달아나 뒤처진 적은 정리(새 적이 다시 사방에서 스폰). 보스는 유지.
+    final dr = _spawnRadius * 1.9;
+    enemies.removeWhere((e) =>
+        e.type != EType.boss && ((e.x - px) * (e.x - px) + (e.y - py) * (e.y - py)) > dr * dr);
   }
 
   // 원거리 적 투사체 — 이동 + 플레이어 충돌
@@ -1779,7 +1778,8 @@ class World {
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.life -= dt;
-      if (b.life <= 0 || b.x < -30 || b.x > w + 30 || b.y < -30 || b.y > h + 30) {
+      if (b.life <= 0 ||
+          ((b.x - px) * (b.x - px) + (b.y - py) * (b.y - py)) > _spawnRadius * _spawnRadius * 2.25) {
         b.dead = true;
         continue;
       }
@@ -2008,7 +2008,7 @@ class World {
         // 엘리트 처치 — 확정 보상(파워업 픽업 + 송곳니) + 큰 연출
         if (e.elite) {
           if (pickups.length < 8) {
-            pickups.add(Pickup(e.x.clamp(16.0, w - 16), e.y.clamp(16.0, h - 16),
+            pickups.add(Pickup(e.x, e.y,
                 PickType.values[rng.nextInt(PickType.values.length)]));
           }
           fangs += 8;
@@ -5406,11 +5406,11 @@ class WorldPainter extends CustomPainter {
     if (w.optShake && w.shake > 0.2) {
       canvas.translate(sin(w.time * 91.0) * w.shake, cos(w.time * 73.0) * w.shake);
     }
-    final lsize = Size(w.w, w.h); // 논리 크기
-    _grid(canvas, lsize, th[2]);
-    _motes(canvas, lsize, th[3]);
+    final lsize = Size(w.w, w.h); // 논리 뷰포트 크기
 
     if (w.phase == GPhase.title) {
+      _grid(canvas, lsize, th[2]);
+      _motes(canvas, lsize, th[3]);
       // 메인화면 프리미엄 배경 — 상단 라이팅 + 발광 펄스 + 시네마틱 비네팅
       final tc = w.titleClock;
       final gx = lsize.width / 2, gy = lsize.height * 0.24;
@@ -5445,6 +5445,11 @@ class WorldPainter extends CustomPainter {
       canvas.restore();
       return;
     }
+
+    // ── 무한 맵 — 카메라가 플레이어를 따라간다(플레이어 = 화면 중앙). 배경이 스크롤 → '갇힌 느낌' 해소 ──
+    canvas.translate(w.w / 2 - w.px, w.h / 2 - w.py);
+    _gridInf(canvas, th[2], w.px, w.py, w.w, w.h);
+    _motesInf(canvas, th[3], w.px, w.py, w.w, w.h);
 
     // 마나 구슬 — 단일 원(성능)
     final orbCore = Paint()..color = P.cyan;
@@ -5636,6 +5641,36 @@ class WorldPainter extends CustomPainter {
     }
     for (double y = 0; y < size.height; y += step) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), g);
+    }
+  }
+
+  // 무한 그리드 — 카메라(플레이어) 주변 보이는 영역만 그려 스크롤되는 무한 맵처럼 보이게.
+  void _gridInf(Canvas canvas, Color col, double cx, double cy, double vw, double vh) {
+    final g = Paint()
+      ..color = col
+      ..strokeWidth = 1;
+    const step = 48.0;
+    final x0 = cx - vw / 2 - step, x1 = cx + vw / 2 + step;
+    final y0 = cy - vh / 2 - step, y1 = cy + vh / 2 + step;
+    final sx = (x0 / step).floorToDouble() * step;
+    for (double x = sx; x < x1; x += step) {
+      canvas.drawLine(Offset(x, y0), Offset(x, y1), g);
+    }
+    final sy = (y0 / step).floorToDouble() * step;
+    for (double y = sy; y < y1; y += step) {
+      canvas.drawLine(Offset(x0, y), Offset(x1, y), g);
+    }
+  }
+
+  // 무한 맵용 모트 — 카메라 주변(현재 뷰포트)에 배치(월드좌표), 떠다니며 살아있는 배경.
+  void _motesInf(Canvas canvas, Color col, double cx, double cy, double vw, double vh) {
+    final clk = w.time;
+    final p = Paint()..color = col;
+    final ox = cx - vw / 2, oy = cy - vh / 2;
+    for (int i = 0; i < 18; i++) {
+      final x = (i * 71.0 + sin(clk * 0.4 + i) * 16) % vw;
+      final y = (i * 47.0 + clk * (10 + (i % 4) * 6.0)) % vh;
+      canvas.drawCircle(Offset(ox + x, oy + (vh - y)), 1.2 + (i % 3) * 0.8, p);
     }
   }
 
